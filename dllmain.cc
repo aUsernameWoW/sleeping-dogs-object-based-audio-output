@@ -4,6 +4,7 @@
 
 #include "core/config.hh"
 #include "core/log.hh"
+#include "core/overlay.hh"
 #include "core/wwise_hooks.hh"
 
 static std::wstring GetModuleDirectory(HMODULE module)
@@ -41,6 +42,7 @@ BOOL WINAPI DllMain(HMODULE module, DWORD reason, LPVOID)
 		// Before the game's main runs (the ASI loader loads us from dinput8.dll, a static import), so the sink
 		// hook is in place before Wwise initializes.
 		wwise::Install();
+		overlay::Install(module);
 	}
 
 	return TRUE;

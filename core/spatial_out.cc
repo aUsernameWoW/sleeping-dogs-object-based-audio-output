@@ -37,7 +37,7 @@ namespace spatial
 	static uint32_t gChannelMask = 0;
 	static uint32_t gChannels = 0;
 	static uint32_t gStride = 0; // floats per ring frame: bed channels, then kMaxObjects object samples
-	static uint32_t gMaxObjectsWanted = 0;
+	static bool gObjectsWanted = false;
 	static AudioObjectType gChannelTypes[kMaxChannels] = {};
 
 	// Horizontal speakers of the bed, for folding an object back into it when Windows won't give us one.
@@ -65,6 +65,24 @@ namespace spatial
 	static std::atomic<bool> gActive{ false };
 	static std::atomic<uint32_t> gObjectSlots{ 0 };
 	static std::atomic<uint64_t> gOverflowFrames{ 0 };
+
+	static Status gStatus;
+	static SRWLOCK gStatusLock = SRWLOCK_INIT;
+
+	void GetStatus(Status& out)
+	{
+		AcquireSRWLockShared(&gStatusLock);
+		out = gStatus;
+		ReleaseSRWLockShared(&gStatusLock);
+	}
+
+	template <typename F>
+	static void UpdateStatus(F&& update)
+	{
+		AcquireSRWLockExclusive(&gStatusLock);
+		update(gStatus);
+		ReleaseSRWLockExclusive(&gStatusLock);
+	}
 
 	template <typename T>
 	static void Release(T*& p)
@@ -312,7 +330,7 @@ namespace spatial
 				DescribeMask(mask).c_str(), DescribeMask(nativeMask).c_str());
 		}
 
-		s.mSlotCount = std::min({ maxDynamic, gMaxObjectsWanted, kMaxObjects });
+		s.mSlotCount = gObjectsWanted ? std::min(maxDynamic, kMaxObjects) : 0;
 
 		s.mEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
 		SpatialAudioObjectRenderStreamActivationParams params = {};
@@ -351,6 +369,13 @@ namespace spatial
 		LOG("spatial: stream started on %s: bed [%s] (%u ch), %u Hz, %u dynamic objects (format allows %u, native statics [%s])",
 			endpointName.c_str(), DescribeMask(mask).c_str(), gChannels, gSampleRate, s.mSlotCount, maxDynamic,
 			DescribeMask(nativeMask).c_str());
+		UpdateStatus([&](Status& status) {
+			status = {};
+			strncpy_s(status.mEndpoint, endpointName.c_str(), _TRUNCATE);
+			strncpy_s(status.mBed, DescribeMask(mask).c_str(), _TRUNCATE);
+			status.mSlots = s.mSlotCount;
+			status.mFormatMax = maxDynamic;
+		});
 		return S_OK;
 	}
 
@@ -432,6 +457,9 @@ namespace spatial
 		uint32_t timeouts = 0;
 		uint32_t loggedFailures = 0;
 		Stats stats;
+		// Stats are per 10 s log period; the menu shows totals since the stream opened.
+		uint64_t totalUnderruns = 0, totalFailures = 0, totalFolded = 0;
+		uint32_t statusPasses = 0;
 		ULONGLONG lastStats = GetTickCount64();
 
 		for (;;) {
@@ -582,6 +610,18 @@ namespace spatial
 			stats.mObjectsMax = std::max(stats.mObjectsMax, sounding);
 			stats.mObjectPasses += sounding;
 			stats.mWindowsObjectsMax = std::max(stats.mWindowsObjectsMax, held);
+			if (++statusPasses >= 10) {
+				statusPasses = 0;
+				UpdateStatus([&](Status& status) {
+					status.mActive = true;
+					status.mSounding = sounding;
+					status.mHeld = held;
+					status.mFill = fill;
+					status.mUnderruns = totalUnderruns + stats.mUnderruns;
+					status.mActivationFailures = totalFailures + stats.mActivationFailures;
+					status.mFoldedPasses = totalFolded + stats.mFoldedPasses;
+				});
+			}
 
 			read += copied;
 			if (++windowPasses >= kTrimWindowPasses) {
@@ -607,6 +647,9 @@ namespace spatial
 			stats.mFrames += frameCount;
 			const ULONGLONG now = GetTickCount64();
 			if (now - lastStats >= 10000) {
+				totalUnderruns += stats.mUnderruns;
+				totalFailures += stats.mActivationFailures;
+				totalFolded += stats.mFoldedPasses;
 				LogStats(stats);
 				lastStats = now;
 			}
@@ -631,6 +674,7 @@ namespace spatial
 				if (SUCCEEDED(hr)) {
 					hr = Run(stream);
 					gObjectSlots.store(0, std::memory_order_release);
+					UpdateStatus([](Status& status) { status.mActive = false; status.mSounding = status.mHeld = 0; });
 					gActive.store(false, std::memory_order_release);
 					LOG("spatial: stream stopped (0x%08lX), game back on XAudio2 until it reopens", hr);
 					verbose = true;
@@ -678,7 +722,7 @@ namespace spatial
 		return result;
 	}
 
-	void Start(uint32_t sampleRate, uint32_t channelMask, uint32_t maxObjects)
+	void Start(uint32_t sampleRate, uint32_t channelMask, bool objects)
 	{
 		static bool started = false;
 		if (started) {
@@ -690,7 +734,7 @@ namespace spatial
 		started = true;
 		gSampleRate = sampleRate;
 		gChannelMask = channelMask;
-		gMaxObjectsWanted = std::min(maxObjects, kMaxObjects);
+		gObjectsWanted = objects;
 		gStride = gChannels + kMaxObjects;
 		gRing = std::make_unique<float[]>(static_cast<size_t>(kRingFrames) * gStride);
 

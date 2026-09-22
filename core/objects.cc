@@ -10,6 +10,7 @@
 namespace objects
 {
 	using namespace wwise;
+	using telemetry::Reason;
 
 	constexpr int kMaxVoices = 128;
 
@@ -51,14 +52,18 @@ namespace objects
 	static int gVoiceCount = 0;
 	static spatial::ObjectBlock gBlock;
 	static uint64_t gFrame = kMinRoleFrames + 1;
-	static uint32_t gBudget = 0;    // slots usable this buffer
+	static uint32_t gTarget = 0;    // slots new objects may take this buffer
+	static uint32_t gBudget = 0;    // slots that may still be in use (> gTarget while shrinking)
 	static uint32_t gSlotsUsed = 0; // slots owned by a voice (any role but Bed)
 
 	struct Stats
 	{
 		uint32_t mInstant = 0;
 		uint32_t mPromoted = 0;
-		uint32_t mDemoted = 0;
+		uint32_t mOutranked = 0;     // demoted: other voices louder
+		uint32_t mDisqualified = 0;  // demoted: became spread/quiet
+		uint32_t mUnrenderable = 0;  // demoted at once: lost its position or stopped being mono
+		uint32_t mShrunk = 0;        // demoted: objects switched off / limit lowered
 		uint32_t mEnded = 0;
 		int mVoicesMax = 0;
 		int mCandidatesMax = 0;
@@ -78,7 +83,7 @@ namespace objects
 
 	static int FreeSlot()
 	{
-		for (uint32_t slot = 0; slot < gBudget; ++slot) {
+		for (uint32_t slot = 0; slot < gTarget; ++slot) {
 			if (!(gSlotsUsed & (1u << slot))) {
 				return static_cast<int>(slot);
 			}
@@ -109,18 +114,82 @@ namespace objects
 		return std::sqrt(sum);
 	}
 
-	void OnDryMix(const void* cbx, const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix)
+	uint32_t Target()
 	{
-		if (!gBudget) {
-			return;
+		return gTarget;
+	}
+
+	bool OnDryMix(const void* cbx, const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix,
+		telemetry::Voice& report)
+	{
+		const auto* rays = At<AkRayVolumeData*>(cbx, cbx::kVolumeData);
+		const uint32_t rayCount = At<uint32_t>(cbx, cbx::kVolumeData + 8);
+		const bool is3D = (At<uint8_t>(pbi, pbi::kPannerBits) & 3) != 0;
+		const void* sound = At<void*>(pbi, pbi::kSound);
+		const uint32_t playingID = At<uint32_t>(pbi, pbi::kPlayingID);
+		Voice* v = gBudget ? Find(pbi, playingID) : nullptr;
+
+		if (!is3D || !rays || !rayCount) {
+			// No position (2D, or rays not computed): can't be an object, nothing to draw.
+			if (v && v->mRole != Role::Bed) {
+				SetRole(*v, Role::Bed, -1);
+				++gStats.mUnrenderable;
+			}
+			if (v) {
+				v->mLastSeen = gFrame;
+				v->mCandidate = false;
+			}
+			return false;
 		}
 
-		const uint32_t playingID = At<uint32_t>(pbi, pbi::kPlayingID);
-		Voice* v = Find(pbi, playingID);
+		const uint32_t channelMask = state->buffer.uChannelMask;
+		const bool mono = std::popcount(channelMask) == 1 && !(channelMask & 0x8) && state->buffer.pData;
+		const float gainPrev = Norm7(mix[0].previous);
+		const float gainNext = Norm7(mix[0].next);
+		const float maxNext = *std::max_element(mix[0].next, mix[0].next + 7);
+		const float downstream = At<float>(mixBus, vpl::kDownstreamGain);
+		const float* samples = static_cast<const float*>(state->buffer.pData);
+		const uint32_t valid = samples ? std::min<uint32_t>(state->buffer.uValidFrames, spatial::kBlockFrames) : 0;
+
+		float energy = 0.0f;
+		for (uint32_t i = 0; i < valid; ++i) {
+			energy += samples[i] * samples[i];
+		}
+		const float level = gainNext * downstream * std::sqrt(energy / spatial::kBlockFrames);
+
+		Reason reason = Reason::Candidate;
+		if (rayCount > 1) {
+			reason = Reason::MultiPosition;
+		}
+		else if (!mono) {
+			reason = Reason::NotMono;
+		}
+		else if (gainNext <= 0.0f) {
+			reason = Reason::Quiet;
+		}
+		else if (maxNext / gainNext < kPointLike) {
+			reason = Reason::Spread;
+		}
+		else if (level < kMinLevel) {
+			reason = Reason::Quiet;
+		}
+
+		report.mTheta = rays[0].theta;
+		report.mPhi = rays[0].phi;
+		report.mDistance = rays[0].r;
+		report.mLevel = level;
+		report.mSoundID = sound ? At<uint32_t>(sound, indexable::kID) : 0;
+		report.mSlot = -1;
+		report.mReason = reason;
+
+		if (!gBudget) {
+			return true;
+		}
+
 		if (!v) {
 			if (gVoiceCount == kMaxVoices) {
 				++gStats.mTableFull;
-				return;
+				return true;
 			}
 			v = &gVoices[gVoiceCount++];
 			// Eligible for promotion right away: it has no bed/object history to protect.
@@ -128,41 +197,19 @@ namespace objects
 		}
 		const bool isNew = v->mLastSeen == 0;
 		v->mLastSeen = gFrame;
+		v->mCandidate = reason == Reason::Candidate;
+		v->mScore = v->mCandidate ? level : 0.0f;
 
-		const uint32_t channelMask = state->buffer.uChannelMask;
-		const auto* rays = At<AkRayVolumeData*>(cbx, cbx::kVolumeData);
-		const uint32_t rayCount = At<uint32_t>(cbx, cbx::kVolumeData + 8);
-		const bool renderable = (At<uint8_t>(pbi, pbi::kPannerBits) & 3) != 0 && std::popcount(channelMask) == 1 &&
-			!(channelMask & 0x8) && rays && rayCount == 1 && state->buffer.pData;
-
-		if (!renderable) {
-			// Can't be an object this buffer (not 3D/mono any more, several positions...): straight back to the bed.
-			v->mCandidate = false;
-			v->mScore = 0.0f;
+		if (rayCount > 1 || !mono) {
+			// Can't be rendered as one mono object this buffer: straight back to the bed.
 			if (v->mRole != Role::Bed) {
 				SetRole(*v, Role::Bed, -1);
-				++gStats.mDemoted;
+				++gStats.mUnrenderable;
 			}
-			return;
+			return true;
 		}
 
-		const float gainPrev = Norm7(mix[0].previous);
-		const float gainNext = Norm7(mix[0].next);
-		const float maxNext = *std::max_element(mix[0].next, mix[0].next + 7);
-		const float downstream = At<float>(mixBus, vpl::kDownstreamGain);
-		const float* samples = static_cast<const float*>(state->buffer.pData);
-		const uint32_t valid = std::min<uint32_t>(state->buffer.uValidFrames, spatial::kBlockFrames);
-
-		float energy = 0.0f;
-		for (uint32_t i = 0; i < valid; ++i) {
-			energy += samples[i] * samples[i];
-		}
-		const float rms = std::sqrt(energy / spatial::kBlockFrames);
-
-		v->mCandidate = gainNext > 0.0f ? maxNext / gainNext >= kPointLike : v->mCandidate;
-		v->mScore = v->mCandidate ? gainNext * downstream * rms : 0.0f;
-
-		if (isNew && v->mCandidate && v->mRole == Role::Bed && v->mScore >= kMinLevel) {
+		if (isNew && v->mCandidate && v->mRole == Role::Bed) {
 			const int slot = FreeSlot();
 			if (slot >= 0) {
 				SetRole(*v, Role::Object, slot);
@@ -171,7 +218,7 @@ namespace objects
 		}
 
 		if (v->mRole == Role::Bed) {
-			return;
+			return true;
 		}
 
 		// Object share of the voice at the start/end of this buffer.
@@ -192,7 +239,7 @@ namespace objects
 		// +x right, +y up, +z behind.
 		const float theta = rays[0].theta;
 		const float phi = rays[0].phi;
-		const float distance = gConfig.mObjectDistance;
+		const float distance = gConfig.mObjectDistance.load(std::memory_order_relaxed);
 		float* position = gBlock.mPosition[v->mSlot];
 		position[0] = distance * std::sin(theta) * std::cos(phi);
 		position[1] = distance * std::sin(phi);
@@ -204,6 +251,10 @@ namespace objects
 			mix[0].previous[k] *= 1.0f - w0;
 			mix[0].next[k] *= 1.0f - w1;
 		}
+
+		report.mSlot = static_cast<int8_t>(v->mSlot);
+		report.mReason = Reason::Object;
+		return true;
 	}
 
 	const spatial::ObjectBlock* FinishFrame()
@@ -236,17 +287,44 @@ namespace objects
 		gStats.mVoicesMax = std::max(gStats.mVoicesMax, gVoiceCount);
 		++gFrame;
 
-		const uint32_t budget = gConfig.mObjects && spatial::IsActive() ? spatial::ObjectSlots() : 0;
-		if (budget < gBudget) {
-			// Fewer slots than before (stream reopened with fewer objects, or gone): no time to crossfade.
+		const uint32_t slots = spatial::IsActive() ? spatial::ObjectSlots() : 0;
+		const int maxObjects = std::max(0, gConfig.mMaxObjects.load(std::memory_order_relaxed));
+		const uint32_t target = gConfig.mObjects.load(std::memory_order_relaxed) ? std::min(slots, static_cast<uint32_t>(maxObjects)) : 0;
+
+		if (slots < gBudget) {
+			// The stream went away or reopened with fewer objects: those slots are gone, no crossfade possible.
 			for (int i = 0; i < gVoiceCount; ++i) {
-				if (gVoices[i].mSlot >= static_cast<int>(budget)) {
+				if (gVoices[i].mSlot >= static_cast<int>(slots)) {
 					SetRole(gVoices[i], Role::Bed, -1);
 				}
 			}
+			gBudget = slots;
 		}
-		gBudget = budget;
+		gTarget = target;
+		if (target >= gBudget) {
+			gBudget = target;
+		}
+		else {
+			// Switched off (A/B) or limit lowered: crossfade the objects above the new limit back into the bed,
+			// and only shrink once they're all out.
+			bool fading = false;
+			for (int i = 0; i < gVoiceCount; ++i) {
+				Voice& v = gVoices[i];
+				if (v.mSlot >= static_cast<int>(target)) {
+					if (v.mRole == Role::Object) {
+						SetRole(v, Role::FadeOut, v.mSlot);
+						++gStats.mShrunk;
+					}
+					fading = true;
+				}
+			}
+			if (!fading) {
+				gBudget = target;
+			}
+		}
 		if (!gBudget) {
+			gVoiceCount = 0;
+			gSlotsUsed = 0;
 			return &gBlock;
 		}
 
@@ -254,7 +332,7 @@ namespace objects
 		int order[kMaxVoices];
 		int candidates = 0;
 		for (int i = 0; i < gVoiceCount; ++i) {
-			if (gVoices[i].mCandidate && gVoices[i].mScore >= kMinLevel) {
+			if (gVoices[i].mCandidate) {
 				order[candidates++] = i;
 			}
 		}
@@ -263,19 +341,25 @@ namespace objects
 		std::sort(order, order + candidates, [&](int a, int b) { return rank(gVoices[a]) > rank(gVoices[b]); });
 
 		bool wanted[kMaxVoices] = {};
-		for (int n = 0; n < candidates && n < static_cast<int>(gBudget); ++n) {
+		for (int n = 0; n < candidates && n < static_cast<int>(gTarget); ++n) {
 			wanted[order[n]] = true;
 		}
 
 		for (int i = 0; i < gVoiceCount; ++i) {
 			Voice& v = gVoices[i];
-			const bool settled = gFrame - v.mRoleSince >= kMinRoleFrames;
-			if (v.mRole == Role::Object && !wanted[i] && (settled || !v.mCandidate)) {
+			if (v.mRole != Role::Object || wanted[i] || v.mSlot >= static_cast<int>(gTarget)) {
+				continue;
+			}
+			if (!v.mCandidate) {
 				SetRole(v, Role::FadeOut, v.mSlot);
-				++gStats.mDemoted;
+				++gStats.mDisqualified;
+			}
+			else if (gFrame - v.mRoleSince >= kMinRoleFrames) {
+				SetRole(v, Role::FadeOut, v.mSlot);
+				++gStats.mOutranked;
 			}
 		}
-		for (int n = 0; n < candidates && n < static_cast<int>(gBudget); ++n) {
+		for (int n = 0; n < candidates && n < static_cast<int>(gTarget); ++n) {
 			Voice& v = gVoices[order[n]];
 			if (v.mRole == Role::Bed && gFrame - v.mRoleSince >= kMinRoleFrames) {
 				const int slot = FreeSlot();
@@ -306,10 +390,12 @@ namespace objects
 
 	void LogStats()
 	{
-		LOG("objects: budget %u, slots in use %d; since last: %u instant, %u promoted, %u demoted, %u ended as objects, "
-			"max %d voices tracked, max %d candidates%s",
-			gBudget, std::popcount(gSlotsUsed), gStats.mInstant, gStats.mPromoted, gStats.mDemoted, gStats.mEnded,
-			gStats.mVoicesMax, gStats.mCandidatesMax, gStats.mTableFull ? " (voice table full!)" : "");
+		LOG("objects: target %u, budget %u, slots in use %d; since last: %u instant, %u promoted; demoted %u outranked, "
+			"%u disqualified, %u unrenderable, %u switched off; %u ended as objects; max %d voices tracked, "
+			"max %d candidates%s",
+			gTarget, gBudget, std::popcount(gSlotsUsed), gStats.mInstant, gStats.mPromoted, gStats.mOutranked,
+			gStats.mDisqualified, gStats.mUnrenderable, gStats.mShrunk, gStats.mEnded, gStats.mVoicesMax,
+			gStats.mCandidatesMax, gStats.mTableFull ? " (voice table full!)" : "");
 		gStats = {};
 	}
 }

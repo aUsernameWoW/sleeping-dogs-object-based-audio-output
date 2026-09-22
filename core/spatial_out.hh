@@ -29,9 +29,10 @@ namespace spatial
 	// Blocks briefly; callable from any thread regardless of its COM apartment.
 	bool IsAvailable();
 
-	// Starts the render thread. `channelMask` is the SPEAKER_* layout of the interleaved frames pushed;
-	// `maxObjects` caps the dynamic objects requested (the endpoint may allow fewer).
-	void Start(uint32_t sampleRate, uint32_t channelMask, uint32_t maxObjects);
+	// Starts the render thread. `channelMask` is the SPEAKER_* layout of the interleaved frames pushed.
+	// With `objects`, as many dynamic objects as the format allows (up to kMaxObjects) are reserved; how many
+	// are used is the router's business and can change at runtime.
+	void Start(uint32_t sampleRate, uint32_t channelMask, bool objects);
 
 	// True while the spatial stream is running. The sink hook must then push every buffer and silence XAudio2;
 	// otherwise it leaves XAudio2 alone (spatial sound off, device lost, ...).
@@ -42,4 +43,21 @@ namespace spatial
 
 	// Audio thread only. `interleaved` == nullptr pushes a silent bed; `objects` may be null.
 	void Push(const float* interleaved, uint32_t frames, const ObjectBlock* objects);
+
+	// For the menu/HUD, refreshed by the render thread about 10 times a second.
+	struct Status
+	{
+		bool mActive = false;
+		char mEndpoint[128] = {};
+		char mBed[64] = {};
+		uint32_t mSlots = 0;        // dynamic objects reserved on the stream
+		uint32_t mFormatMax = 0;    // what the spatial format allows
+		uint32_t mSounding = 0;     // slots with sound (latest pass)
+		uint32_t mHeld = 0;         // Windows objects held (latest pass)
+		uint32_t mFill = 0;         // ring fill in frames (latency)
+		uint64_t mUnderruns = 0;    // since the stream opened
+		uint64_t mActivationFailures = 0;
+		uint64_t mFoldedPasses = 0;
+	};
+	void GetStatus(Status& out);
 }

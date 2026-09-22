@@ -45,12 +45,13 @@
   <PropertyGroup Label="UserMacros">
     <!-- Relative to this project, so moving the whole dev folder keeps working. MinHook.lib there is x64 /MT. -->
     <MinHookDir>$(MSBuildThisFileDirectory)..\..\reference\SPatch\external\</MinHookDir>
+    <ReShadeDir>$(MSBuildThisFileDirectory)..\..\reference\reshade\</ReShadeDir>
   </PropertyGroup>
   <PropertyGroup>
     <TargetName>SDAtmos</TargetName>
     <TargetExt>.asi</TargetExt>
     <IncludePath>$(MSBuildThisFileDirectory);$(IncludePath)</IncludePath>
-    <ExternalIncludePath>$(MinHookDir);$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(MinHookDir);$(ReShadeDir)include;$(ReShadeDir)deps\imgui;$(ExternalIncludePath)</ExternalIncludePath>
     <GenerateManifest>false</GenerateManifest>
     <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)build\obj\$(Configuration)\</IntDir>
@@ -101,16 +102,20 @@
     <ClCompile Include="core\config.cc" />
     <ClCompile Include="core\log.cc" />
     <ClCompile Include="core\objects.cc" />
+    <ClCompile Include="core\overlay.cc" />
     <ClCompile Include="core\scan.cc" />
     <ClCompile Include="core\spatial_out.cc" />
+    <ClCompile Include="core\telemetry.cc" />
     <ClCompile Include="core\wwise_hooks.cc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\config.hh" />
     <ClInclude Include="core\log.hh" />
     <ClInclude Include="core\objects.hh" />
+    <ClInclude Include="core\overlay.hh" />
     <ClInclude Include="core\scan.hh" />
     <ClInclude Include="core\spatial_out.hh" />
+    <ClInclude Include="core\telemetry.hh" />
     <ClInclude Include="core\wwise.hh" />
     <ClInclude Include="core\wwise_hooks.hh" />
   </ItemGroup>

@@ -13,6 +13,7 @@
 #include "objects.hh"
 #include "scan.hh"
 #include "spatial_out.hh"
+#include "telemetry.hh"
 #include "wwise.hh"
 
 namespace wwise
@@ -43,6 +44,7 @@ namespace wwise
 	static void* gMainSink = nullptr;
 	static bool gBedEnabled = false;
 	static bool gVoiceHooks = false;
+	static uint64_t gBufferCount = 0;
 
 	// ---- Voice recon: what does Wwise know about each 3D voice at mix time? ----
 
@@ -189,8 +191,12 @@ namespace wwise
 				if (gConfig.mVoiceLog) {
 					voices::OnDryMix(mixBus, cbx, pbi, state, mix);
 				}
-				if (pbi) {
-					objects::OnDryMix(cbx, pbi, mixBus, state, mix);
+				telemetry::Voice report;
+				if (pbi && objects::OnDryMix(cbx, pbi, mixBus, state, mix, report)) {
+					telemetry::Add(report);
+				}
+				else {
+					telemetry::AddUnpositioned();
 				}
 			}
 			else if (gConfig.mVoiceLog) {
@@ -220,6 +226,7 @@ namespace wwise
 			}
 		}
 		objects::StartFrame();
+		telemetry::Publish(++gBufferCount, objects::Target());
 		if (gConfig.mVoiceLog) {
 			voices::OnFrameEnd(gSampleRate ? *gSampleRate : 0);
 		}
@@ -249,7 +256,8 @@ namespace wwise
 			gMainSink = self;
 			if (gBedEnabled) {
 				if (rate && static_cast<uint32_t>(std::popcount(speakers)) == channels) {
-					spatial::Start(rate, speakers, gVoiceHooks && gConfig.mObjects ? static_cast<uint32_t>(gConfig.mMaxObjects) : 0);
+					// Objects are reserved whenever the router can run, even if they start switched off (A/B).
+					spatial::Start(rate, speakers, gVoiceHooks);
 				}
 				else {
 					LOG("sink: unexpected layout, not starting the spatial bed");
@@ -315,7 +323,9 @@ namespace wwise
 		gBedEnabled = sinkOk && gConfig.mSpatialBed;
 		LOG("hook: sink hooks %s, spatial bed %s", sinkOk ? "ready" : "MISSING", gBedEnabled ? "on" : "off");
 
-		if ((gConfig.mVoiceLog || (gBedEnabled && gConfig.mObjects)) && sinkOk) {
+		// Needed whenever the bed runs, even with objects off at start: they can be switched on in-game (A/B),
+		// and the HUD shows the voices either way.
+		if ((gConfig.mVoiceLog || gBedEnabled) && sinkOk) {
 			uint8_t* runVPL = scan::FindUnique("CAkLEngine::RunVPL", kSigRunVPL);
 			uint8_t* consume = scan::FindUnique("CAkVPLMixBusNode::ConsumeBuffer", kSigConsumeBuffer);
 			gVoiceHooks = Hook("RunVPL", runVPL, &RunVPLHook, gRunVPL) &&
@@ -325,8 +335,8 @@ namespace wwise
 				if (gRunVPL) MH_RemoveHook(runVPL);
 				if (gConsumeBuffer) MH_RemoveHook(consume);
 			}
-			LOG("hook: voice hooks %s, dynamic objects %s (max %d, %.1f m)", gVoiceHooks ? "ready" : "MISSING",
-				gVoiceHooks && gBedEnabled && gConfig.mObjects ? "on" : "off", gConfig.mMaxObjects, gConfig.mObjectDistance);
+			LOG("hook: voice hooks %s, dynamic objects %s at start (max %d, %.1f m)", gVoiceHooks ? "ready" : "MISSING",
+				gVoiceHooks && gBedEnabled && gConfig.mObjects ? "on" : "off", gConfig.mMaxObjects.load(), gConfig.mObjectDistance.load());
 		}
 	}
 }

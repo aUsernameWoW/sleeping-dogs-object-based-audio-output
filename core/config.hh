@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <string>
 
 struct Config
@@ -8,15 +9,30 @@ struct Config
 	// This alone makes the receiver switch to Dolby Atmos; falls back to XAudio2 if spatial audio is off.
 	bool mSpatialBed = true;
 
-	// Take the loudest point-like 3D voices out of the bed and send them as dynamic objects.
-	bool mObjects = true;
+	// --- Changeable at runtime (menu / hotkeys), hence atomic: read by the audio and render threads. ---
+
+	// Take the loudest point-like 3D voices out of the bed and send them as dynamic objects (A/B switch).
+	std::atomic<bool> mObjects{ true };
 
 	// Upper bound on dynamic objects; the active spatial format may allow fewer (Atmos over HDMI: 20).
-	int mMaxObjects = 20;
+	std::atomic<int> mMaxObjects{ 20 };
 
 	// Objects are placed on a sphere of this radius (meters) around the listener: Wwise has already applied
 	// distance attenuation, only the direction is new information.
-	float mObjectDistance = 2.0f;
+	std::atomic<float> mObjectDistance{ 2.0f };
+
+	// HUD drawn over the game through ReShade (needs ReShade with add-on support).
+	std::atomic<bool> mHud{ false };
+	std::atomic<bool> mHudRadar{ true };
+	std::atomic<bool> mHudMarkers{ true };
+	std::atomic<bool> mHudLabels{ false };
+	std::atomic<bool> mHudBedVoices{ true };  // also draw voices that stay in the bed
+	std::atomic<float> mHudFov{ 60.0f };      // vertical camera FOV (degrees) for the on-screen markers
+	std::atomic<float> mHudRadarRange{ 60.0f }; // meters at the radar's edge
+
+	// Virtual-key codes.
+	int mToggleObjectsKey = 0x78; // VK_F9
+	int mToggleHudKey = 0x77;     // VK_F8
 
 	// Write SDAtmos.log next to the .asi.
 	bool mLogging = true;
@@ -31,4 +47,7 @@ namespace config
 {
 	// Loads <dir>\SDAtmos.ini, writing a default one if it doesn't exist.
 	void Load(const std::wstring& dir);
+
+	// Writes the runtime-changeable values back (keys are updated in place, comments survive).
+	void Save();
 }

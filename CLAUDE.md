@@ -12,7 +12,13 @@ Status (2026-09-22):
 - Standalone test passed (soundbar shows Atmos, height audible).
 - Milestones 2+3 verified in-game (North Point safehouse → night market fight): bed through ISAC, soundbar
   on Atmos, zero underruns/overflows over ~4 min, ring fill 1408..2400 frames.
-- Milestone 4 (dynamic objects, voice router) built and deployed, **not yet tested in-game**.
+- Milestone 4 (dynamic objects) verified in-game: avg 5-11 objects, peaks at the 20 limit in fights, zero
+  activation failures, elevation reaching the renderer (e.g. phi 62°). Not yet judged by ear.
+- Debug overlay (ReShade menu tab + HUD radar/markers, F9 A/B, F8 HUD) works in-game. The default marker FOV
+  (60° vertical) lines up with the sources, which confirms the Wwise listener is the camera. Cyan (object)
+  voices are the ones the user expected. Radar not looked at yet.
+- Seen on the HUD: some NPC voices are positioned at the NPC's feet (the game object position Wwise gets is
+  probably the character root, not the head). Not investigated yet.
 
 ## Files
 
@@ -20,12 +26,17 @@ Status (2026-09-22):
 - `core/wwise.hh` — Wwise 2012.2 struct layouts/offsets from the legacy PDB.
 - `core/wwise_hooks.*` — signatures + hooks: `CAkSinkXAudio2::Init/PassData/PassSilence`,
   `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`; voice snapshot logging.
-- `core/objects.*` — voice router: which voices become objects, sample capture, bed/object crossfades.
+- `core/objects.*` — voice router: which voices become objects, sample capture, bed/object crossfades,
+  per-voice report (position, level, role, why it stays in the bed).
+- `core/telemetry.*` — per-buffer voice snapshot, audio thread → render thread (try-lock, never blocks audio).
+- `core/overlay.*` — hotkey thread (F9 objects A/B, F8 HUD), ReShade add-on: "SDAtmos" menu tab (settings,
+  stream status, voice table, save to ini) and HUD (radar, on-screen markers, A/B banner).
 - `core/spatial_out.*` — ISAC stream (bed + dynamic objects), SPSC ring with per-block object metadata,
   render thread, object activation/reuse/release, fold-into-bed fallback, reopen on device loss.
 - `core/scan.*` — unique pattern search in the exe's `.text`, RIP-relative decoding.
 - `core/config.*`, `core/log.*` — `SDAtmos.ini` / `SDAtmos.log`.
-- `tests/load_test.cc` (automated: loads into a Wwise-less process), `tests/spatial_orbit_manual.cc`
+- `tests/load_test.cc` (automated: loads into a Wwise-less process), `tests/config_save_test.cc` (automated:
+  `config::Save` keeps UTF-8 comments/other keys, adds missing ones), `tests/spatial_orbit_manual.cc`
   (standalone ISAC check: `--probe` prints limits, otherwise plays a circling object).
 
 ## Design decisions (don't undo without reason)
@@ -54,6 +65,17 @@ Status (2026-09-22):
   bed (constant power between adjacent bed speakers).
 - Object position = Wwise's direction on a sphere of `Distance` m (default 2): distance attenuation is already
   in the gain.
+- **Runtime settings are atomics in `gConfig`** (objects on/off, max objects, distance, HUD options): read by the
+  audio thread, written by the hotkey thread and the menu. Objects on/off and lowering the limit crossfade the
+  affected objects back into the bed first (`gTarget` drops at once, `gBudget` only after the fades). Dynamic
+  objects are reserved at stream open whenever the router can run, so switching them on later works.
+- **HUD projection assumes the Wwise listener is the camera** (the log shows the player at r≈3.3 m below/in
+  front): marker = direction projected with a vertical FOV slider; the radar needs no FOV at all.
+- `reshade_overlay` is registered only while the HUD or the A/B banner is visible (it makes ReShade run its
+  ImGui pass every frame). Hotkeys are polled with `GetAsyncKeyState` on our own thread (foreground check) so
+  they work without ReShade.
+- `config::Save` edits the ini byte-wise: `WritePrivateProfileString` treats BOM-less files as ANSI and would
+  mangle the UTF-8 comments.
 - MinHook is SDmodding's reduced fork (`reference\SPatch\external`): `MH_CreateHook` enables immediately,
   there is no `MH_Initialize`/`MH_EnableHook`.
 - The installed exe differs from the legacy one only in rel32/RIP displacement bytes inside these functions;
@@ -108,7 +130,8 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
 4. Dynamic objects — built, awaiting in-game test. Watch: object loudness vs original (objects skip bus FX,
    e.g. a master limiter or slow-motion filters on buses), audible jumps on promotion/demotion, activation
    failures, whether 20 objects are enough in fights.
-5. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
+5. Next: detailed listening session (A/B with F9), NPC voice height (feet vs head), radar check.
+6. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
    gunshots/vehicles by sound ID), maybe a ReShade overlay showing objects.
 
 Why not hook `PostEvent`/`SetPosition` as first planned: those give IDs and positions but no audio samples.
