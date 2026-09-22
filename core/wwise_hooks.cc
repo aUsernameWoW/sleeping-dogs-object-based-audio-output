@@ -1,0 +1,332 @@
+#include "wwise_hooks.hh"
+
+#include <Windows.h>
+
+#include <MinHook.h>
+
+#include <bit>
+#include <cmath>
+#include <cstring>
+
+#include "config.hh"
+#include "log.hh"
+#include "objects.hh"
+#include "scan.hh"
+#include "spatial_out.hh"
+#include "wwise.hh"
+
+namespace wwise
+{
+	// Signatures generated from the legacy exe (IDA, legacy PDB names) and checked unique in the installed one.
+	constexpr char kSigSinkInit[] = "48 89 5C 24 ? 48 89 74 24 ? 57 48 81 EC B0 04 00 00";   // CAkSinkXAudio2::Init
+	constexpr char kSigPassData[] = "40 55 48 83 EC 20 48 8D 6C 24 ? 0F B7 41";              // CAkSinkXAudio2::PassData
+	constexpr char kSigPassSilence[] = "40 53 48 83 EC 20 0F B7 41 ? 48 8B D9";              // CAkSinkXAudio2::PassSilence
+	constexpr char kSigRunVPL[] = "40 53 55 56 57 41 54 41 56 41 57 48 81 EC 20 02 00 00";   // CAkLEngine::RunVPL
+	constexpr char kSigConsumeBuffer[] =                                                     // CAkVPLMixBusNode::ConsumeBuffer(AkVPLState&, AkAudioMix*)
+		"48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 66 83 7A ? ? 49 8B F0 48 8B FA 48 8B D9 76";
+
+	// CAkSinkXAudio2::Init + 0x4D: mov r9d, [rip + AkAudioLibSettings::g_pipelineCoreFrequency]
+	constexpr size_t kInitRateLoad = 0x4D;
+
+	using SinkInitFn = AKRESULT(__fastcall*)(void* self, void* settings, uint32_t channelMask, uint32_t sinkType);
+	using SinkPassFn = AKRESULT(__fastcall*)(void* self);
+	using RunVPLFn = void(__fastcall*)(AkRunningVPL* vpl);
+	using ConsumeBufferFn = void(__fastcall*)(void* mixBus, AkVPLState* state, AkAudioMix* mix);
+
+	static SinkInitFn gSinkInit = nullptr;
+	static SinkPassFn gPassData = nullptr;
+	static SinkPassFn gPassSilence = nullptr;
+	static RunVPLFn gRunVPL = nullptr;
+	static ConsumeBufferFn gConsumeBuffer = nullptr;
+
+	static const uint32_t* gSampleRate = nullptr;
+	static void* gMainSink = nullptr;
+	static bool gBedEnabled = false;
+	static bool gVoiceHooks = false;
+
+	// ---- Voice recon: what does Wwise know about each 3D voice at mix time? ----
+
+	namespace voices
+	{
+		constexpr int kMaxSnapshotLines = 16;
+
+		static thread_local AkRunningVPL* tCurrent = nullptr;
+		static uint64_t gFrame = 0;
+		static uint64_t gNextSnapshot = 0;
+		static bool gSnapshot = false;
+		static int gSnapshotLines = 0;
+
+		// Per-frame counts and their maxima over the snapshot period.
+		static uint32_t gDry = 0, gDry3D = 0, gAux = 0;
+		static uint32_t gMaxDry = 0, gMaxDry3D = 0, gMaxAux = 0;
+
+		static void LogVoice(const void* mixBus, const void* cbx, const void* pbi, const AkVPLState* state, const AkAudioMix* mix)
+		{
+			const uint32_t channels = static_cast<uint32_t>(std::popcount(state->buffer.uChannelMask));
+			const uint32_t frames = state->buffer.uValidFrames;
+
+			const void* sound = At<void*>(pbi, pbi::kSound);
+			const void* gameObj = At<void*>(pbi, pbi::kGameObj);
+			const uint32_t soundID = sound ? At<uint32_t>(sound, indexable::kID) : 0;
+			const unsigned long long objID = gameObj ? At<uint64_t>(gameObj, game_obj::kID) : 0;
+			const uint8_t pannerBits = At<uint8_t>(pbi, pbi::kPannerBits);
+
+			const auto* rays = At<AkRayVolumeData*>(cbx, cbx::kVolumeData);
+			const uint32_t rayCount = At<uint32_t>(cbx, cbx::kVolumeData + 8);
+
+			// Total gain of channel 0 into the mix (pan is power-preserving, so this is attenuation × volume).
+			float power = 0.0f;
+			for (float g : mix[0].next) {
+				power += g * g;
+			}
+
+			float rms = 0.0f;
+			if (state->buffer.pData && frames) {
+				const float* samples = static_cast<const float*>(state->buffer.pData);
+				for (uint32_t i = 0; i < frames; ++i) {
+					rms += samples[i] * samples[i];
+				}
+				rms = std::sqrt(rms / frames);
+			}
+
+			// Speaker gains are in Wwise's internal order (FL FR C BL BR SL SR LFE, established from the first
+			// in-game log: theta -135° lands on index 3, +134° on 4, ±90° on 5/6).
+			const float* g = mix[0].next;
+			const int slot = objects::SlotOf(pbi);
+			char role[16];
+			snprintf(role, sizeof(role), slot >= 0 ? "obj%d" : "bed", slot);
+			constexpr float kDeg = 57.2957795f;
+			if (rays && rayCount) {
+				LOG("  voice %-5s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=%u r=%.1f theta=%.0f phi=%.0f dryMix=%.2f | "
+					"gain=%.3f down=%.2f rms=%.3f | FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f",
+					role, soundID, objID, pannerBits & 3, (pannerBits >> 2) & 3, channels, rayCount, rays[0].r,
+					rays[0].theta * kDeg, rays[0].phi * kDeg, rays[0].fDryMixGain, std::sqrt(power),
+					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]);
+			}
+			else {
+				LOG("  voice %-5s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=0 | gain=%.3f down=%.2f rms=%.3f | "
+					"FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f",
+					role, soundID, objID, pannerBits & 3, (pannerBits >> 2) & 3, channels, std::sqrt(power),
+					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]);
+			}
+		}
+
+		static void OnAuxMix()
+		{
+			++gAux;
+		}
+
+		// Before the voice router touches `mix`, so the log shows Wwise's own gains.
+		static void OnDryMix(const void* mixBus, const void* cbx, const void* pbi, const AkVPLState* state, const AkAudioMix* mix)
+		{
+			const bool is3D = pbi && (At<uint8_t>(pbi, pbi::kPannerBits) & 3) != 0;
+			++gDry;
+			if (is3D) {
+				++gDry3D;
+			}
+
+			// 2D voices get one line per snapshot too, but only after the 3D ones had their chance.
+			if (gSnapshot && pbi && gSnapshotLines < kMaxSnapshotLines && (is3D || gSnapshotLines < kMaxSnapshotLines / 2)) {
+				++gSnapshotLines;
+				LogVoice(mixBus, cbx, pbi, state, mix);
+			}
+		}
+
+		// Called at the end of every rendered buffer (from PassData / PassSilence).
+		static void OnFrameEnd(uint32_t sampleRate)
+		{
+			gMaxDry = gDry > gMaxDry ? gDry : gMaxDry;
+			gMaxDry3D = gDry3D > gMaxDry3D ? gDry3D : gMaxDry3D;
+			gMaxAux = gAux > gMaxAux ? gAux : gMaxAux;
+			if (gSnapshot) {
+				LOG("voices: frame %llu: %u dry (%u 3D), %u aux sends; max over last period %u dry (%u 3D), %u aux",
+					gFrame, gDry, gDry3D, gAux, gMaxDry, gMaxDry3D, gMaxAux);
+				objects::LogStats();
+				gSnapshot = false;
+				gMaxDry = gMaxDry3D = gMaxAux = 0;
+			}
+			gDry = gDry3D = gAux = 0;
+
+			++gFrame;
+			if (gFrame >= gNextSnapshot) {
+				// The lines are logged while the next frame renders, then summarized at its end.
+				gSnapshot = true;
+				gSnapshotLines = 0;
+				gNextSnapshot = gFrame + (sampleRate ? sampleRate : 48000) * 5 / kFramesPerBuffer;
+				LOG("voices: snapshot of frame %llu", gFrame);
+			}
+		}
+	}
+
+	// ---- Hooks ----
+
+	static void __fastcall RunVPLHook(AkRunningVPL* vpl)
+	{
+		voices::tCurrent = vpl;
+		gRunVPL(vpl);
+		voices::tCurrent = nullptr;
+	}
+
+	static bool IsDryBus(const void* cbx, const void* mixBus)
+	{
+		for (const void* device = At<void*>(cbx, cbx::kDevices); device; device = At<void*>(device, device_info::kNext)) {
+			if (!At<bool>(device, device_info::kCrossDeviceSend) && At<void*>(device, device_info::kMixBus) == mixBus) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static void __fastcall ConsumeBufferHook(void* mixBus, AkVPLState* state, AkAudioMix* mix)
+	{
+		// Only mixes made from inside RunVPL are voices; aux sends (reverb) stay untouched and so stay in the bed.
+		const AkRunningVPL* vpl = voices::tCurrent;
+		if (vpl && !vpl->bFeedbackVPL && vpl->pCbx) {
+			const void* cbx = vpl->pCbx;
+			if (IsDryBus(cbx, mixBus)) {
+				const void* source = At<void*>(cbx, cbx::kSources);
+				const void* pbi = source ? At<void*>(source, src_node::kContext) : nullptr;
+				if (gConfig.mVoiceLog) {
+					voices::OnDryMix(mixBus, cbx, pbi, state, mix);
+				}
+				if (pbi) {
+					objects::OnDryMix(cbx, pbi, mixBus, state, mix);
+				}
+			}
+			else if (gConfig.mVoiceLog) {
+				voices::OnAuxMix();
+			}
+		}
+		gConsumeBuffer(mixBus, state, mix);
+	}
+
+	// End of a rendered buffer on the main sink: hand bed + objects to the spatial stream.
+	static void FinishBuffer(void* self, bool silence)
+	{
+		const spatial::ObjectBlock* block = objects::FinishFrame();
+		if (spatial::IsActive()) {
+			if (silence) {
+				spatial::Push(nullptr, kFramesPerBuffer, block);
+			}
+			else {
+				// Take the mix before PassData hands it to XAudio2 (XAudio2 reads its ring asynchronously, so
+				// zeroing afterwards would race), then let XAudio2 play silence.
+				AkAudioBuffer& out = At<AkAudioBuffer>(self, sink::kMasterOut);
+				const uint32_t channels = At<uint32_t>(self, sink::kNumChannels);
+				if (out.pData && out.uValidFrames) {
+					spatial::Push(static_cast<const float*>(out.pData), out.uValidFrames, block);
+					std::memset(out.pData, 0, static_cast<size_t>(channels) * out.uValidFrames * sizeof(float));
+				}
+			}
+		}
+		objects::StartFrame();
+		if (gConfig.mVoiceLog) {
+			voices::OnFrameEnd(gSampleRate ? *gSampleRate : 0);
+		}
+	}
+
+	static AKRESULT __fastcall SinkInitHook(void* self, void* settings, uint32_t channelMask, uint32_t sinkType)
+	{
+		uint32_t mask = channelMask;
+		// Wwise picks its layout from XAudio2's device (the endpoint's mix format), which needn't be 7.1 even when
+		// the spatial renderer has a 7.1.4 bed. With spatial audio available, always mix 7.1.
+		if (gBedEnabled && mask == 0 && !gMainSink) {
+			const bool available = spatial::IsAvailable();
+			LOG("sink: spatial audio %s on the default endpoint", available ? "available" : "not available");
+			if (available) {
+				mask = kSpeakers71;
+			}
+		}
+
+		const AKRESULT result = gSinkInit(self, settings, mask, sinkType);
+		const uint32_t speakers = At<uint32_t>(self, sink::kSpeakersConfig);
+		const uint32_t channels = At<uint32_t>(self, sink::kNumChannels);
+		const uint32_t rate = gSampleRate ? *gSampleRate : 0;
+		LOG("sink: CAkSinkXAudio2::Init(this=%p, mask 0x%X -> 0x%X, type %u) = %d: speakers 0x%X, %u channels, %u Hz",
+			self, channelMask, mask, sinkType, result, speakers, channels, rate);
+
+		if (result == AK_Success && !gMainSink) {
+			gMainSink = self;
+			if (gBedEnabled) {
+				if (rate && static_cast<uint32_t>(std::popcount(speakers)) == channels) {
+					spatial::Start(rate, speakers, gVoiceHooks && gConfig.mObjects ? static_cast<uint32_t>(gConfig.mMaxObjects) : 0);
+				}
+				else {
+					LOG("sink: unexpected layout, not starting the spatial bed");
+				}
+			}
+		}
+		return result;
+	}
+
+	static AKRESULT __fastcall PassDataHook(void* self)
+	{
+		if (self == gMainSink) {
+			FinishBuffer(self, false);
+		}
+		return gPassData(self);
+	}
+
+	static AKRESULT __fastcall PassSilenceHook(void* self)
+	{
+		if (self == gMainSink) {
+			FinishBuffer(self, true);
+		}
+		return gPassSilence(self);
+	}
+
+	template <typename T>
+	static bool Hook(const char* name, void* target, void* detour, T& original)
+	{
+		if (!target) {
+			return false;
+		}
+		const MH_STATUS status = MH_CreateHook(target, detour, reinterpret_cast<void**>(&original));
+		if (status != MH_OK) {
+			LOG("hook: %s: MH_CreateHook failed (%d)", name, status);
+			return false;
+		}
+		return true;
+	}
+
+	// The MinHook build shipped with SDmodding (reference\SPatch\external) is a reduced fork: no
+	// MH_Initialize / MH_EnableHook, MH_CreateHook enables the hook immediately, MH_RemoveHook frees the
+	// trampoline. Fine here: we hook from DllMain before any game thread exists.
+	void Install()
+	{
+		uint8_t* sinkInit = scan::FindUnique("CAkSinkXAudio2::Init", kSigSinkInit);
+		uint8_t* passData = scan::FindUnique("CAkSinkXAudio2::PassData", kSigPassData);
+		uint8_t* passSilence = scan::FindUnique("CAkSinkXAudio2::PassSilence", kSigPassSilence);
+
+		if (sinkInit) {
+			static constexpr uint8_t kMovR9dRip[] = { 0x44, 0x8B, 0x0D };
+			if (std::memcmp(sinkInit + kInitRateLoad, kMovR9dRip, sizeof(kMovR9dRip)) == 0) {
+				gSampleRate = static_cast<const uint32_t*>(scan::RipTarget(sinkInit + kInitRateLoad + 3));
+			}
+			else {
+				LOG("scan: sample rate load not where expected in CAkSinkXAudio2::Init");
+			}
+		}
+
+		const bool sinkOk = sinkInit && passData && passSilence && gSampleRate &&
+			Hook("SinkInit", sinkInit, &SinkInitHook, gSinkInit) &&
+			Hook("PassData", passData, &PassDataHook, gPassData) &&
+			Hook("PassSilence", passSilence, &PassSilenceHook, gPassSilence);
+		gBedEnabled = sinkOk && gConfig.mSpatialBed;
+		LOG("hook: sink hooks %s, spatial bed %s", sinkOk ? "ready" : "MISSING", gBedEnabled ? "on" : "off");
+
+		if ((gConfig.mVoiceLog || (gBedEnabled && gConfig.mObjects)) && sinkOk) {
+			uint8_t* runVPL = scan::FindUnique("CAkLEngine::RunVPL", kSigRunVPL);
+			uint8_t* consume = scan::FindUnique("CAkVPLMixBusNode::ConsumeBuffer", kSigConsumeBuffer);
+			gVoiceHooks = Hook("RunVPL", runVPL, &RunVPLHook, gRunVPL) &&
+				Hook("ConsumeBuffer", consume, &ConsumeBufferHook, gConsumeBuffer);
+			if (!gVoiceHooks) {
+				// Half a pair is useless (ConsumeBuffer needs RunVPL's context); drop whichever was created.
+				if (gRunVPL) MH_RemoveHook(runVPL);
+				if (gConsumeBuffer) MH_RemoveHook(consume);
+			}
+			LOG("hook: voice hooks %s, dynamic objects %s (max %d, %.1f m)", gVoiceHooks ? "ready" : "MISSING",
+				gVoiceHooks && gBedEnabled && gConfig.mObjects ? "on" : "off", gConfig.mMaxObjects, gConfig.mObjectDistance);
+		}
+	}
+}
