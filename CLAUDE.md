@@ -33,6 +33,10 @@ Status (2026-09-22):
   `BusFx = 1` had pushed everything under it into the bed (3/20 objects on the HUD), so objects now run that
   EQ themselves instead.
 
+Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
+voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
+`docs\` the detail.
+
 ## Files
 
 - `dllmain.cc` — config, log, `wwise::Install()` from DllMain (before the game initializes Wwise).

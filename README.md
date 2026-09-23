@@ -55,6 +55,12 @@ Wwise 引擎，改由 `ISpatialAudioClient` 输出：
   效果（留在床里，`BusFx`）。
 - ReShade 菜单 → **SDAtmos** 标签页：流状态、实时设置、声音列表、保存到 ini。
 
+### 文档
+
+`docs\` 里有面向接手者的详细说明（英文）：架构与数据流、Wwise 2012.2 内部结构与偏移、游戏侧的音频实体/
+角色组件/听者、Windows 空间音频输出、对象路由策略、逆向流程、测试与日志解读。从 [docs/README.md](docs/README.md)
+开始。
+
 ### 编译
 
 Visual Studio 2022（v143），Windows SDK 10.0.26100。项目需要放在工作区的 `mods\SDAtmos`，工作区里还要有：
@@ -128,6 +134,13 @@ In game:
   directions. Cyan = object, yellow = qualifies but waiting, gray = stays in the bed, green = the player's
   own sounds (kept in the bed, `PlayerInBed`), orange = its bus runs insert effects (kept in the bed, `BusFx`).
 - ReShade menu → **SDAtmos** tab: stream status, live settings, voice list, save to ini.
+
+### Documentation
+
+`docs\` holds the long-form material for whoever picks this up: architecture and data flow, Wwise 2012.2
+internals and offsets, the game's audio entities/actor components/listener, Windows spatial audio output,
+the object routing policy, the reverse-engineering workflow, testing and log reading. Start at
+[docs/README.md](docs/README.md).
 
 ### Building
 
