@@ -17,8 +17,10 @@ Status (2026-09-22):
 - Debug overlay (ReShade menu tab + HUD radar/markers, F9 A/B, F8 HUD) works in-game. The default marker FOV
   (60° vertical) lines up with the sources, which confirms the Wwise listener is the camera. Cyan (object)
   voices are the ones the user expected. Radar not looked at yet.
-- Seen on the HUD: some NPC voices are positioned at the NPC's feet (the game object position Wwise gets is
-  probably the character root, not the head). Not investigated yet.
+- Seen on the HUD: NPC voices are positioned at the NPC's feet: `ActorAudioComponent`'s entity follows the
+  character root. Since 2026-09-23 a `SetPosition` hook lifts actor entities by `ActorLift` (default 1.5 m,
+  Wwise Y = world up) before Wwise sees them; awaiting the in-game check (NPC speech markers at head
+  height, no audible level change).
 - 2026-09-23: the user heard Wei Shen's own footsteps as a sharp point ~3 m ahead, slightly left (the
   over-the-shoulder camera). His voices are now identified by game object and kept in the bed
   (`PlayerInBed`, HUD green). First test: vault/climb sounds went green (the component's own entity), the
@@ -43,7 +45,8 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
 - `core/wwise.hh` — Wwise 2012.2 struct layouts/offsets from the legacy PDB.
 - `core/game.hh` — the game (UFG) side: AudioEntity/ActorAudioComponent offsets, the player's name hash.
 - `core/wwise_hooks.*` — signatures + hooks: `CAkSinkXAudio2::Init/PassData/PassSilence`,
-  `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`; voice snapshot logging.
+  `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`, `AK::SoundEngine::SetPosition` (actor lift);
+  voice snapshot logging.
 - `core/objects.*` — voice router: which voices become objects, sample capture, bed/object crossfades,
   per-voice report (position, level, role, why it stays in the bed).
 - `core/telemetry.*` — per-buffer voice snapshot, audio thread → render thread (try-lock, never blocks audio).
@@ -95,6 +98,12 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   out every object). The log lists each bus's active effects when first seen/changed.
 - **Objects never get dropped**: if Windows refuses a dynamic object, the render thread pans that slot into the
   bed (constant power between adjacent bed speakers).
+- **Actor entities are lifted towards head height** in `AK::SoundEngine::SetPosition` (`ActorLift`): the
+  entity is recognized by `SimComponent::m_TypeUID` (+0x18 of the component, entity − 0x40) ==
+  `ActorAudioComponent::_TypeUID` 0xD2000003. Done at the game→Wwise boundary rather than in the router so
+  the rays come out right by themselves; the bed ignores elevation, so only objects change (plus a few
+  percent of distance). Positions only update when a character moved > 0.1 m (`AudioEntityUpdate`), so
+  changing the value takes effect as characters move.
 - Object position = Wwise's direction on a sphere of `Distance` m (default 2): distance attenuation is already
   in the gain.
 - **The player's own voices stay in the bed** (`PlayerInBed`, default on). With the listener at the camera his
@@ -208,8 +217,7 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
    e.g. a master limiter or slow-motion filters on buses), audible jumps on promotion/demotion, activation
    failures, whether 20 objects are enough in fights.
 5. Player attribution, churn and bus EQ: **verified in-game** (2026-09-23).
-6. Next: NPC voice height (feet vs head; could lift actor-entity voices ~1.5 m), radar check, offline tests
-   for the router (fake PBI/cbx). Possible experiment: flip the game's own `m_positionListenerAtCamera` to
+6. Next: verify the actor lift in-game, radar check, offline tests for the router (fake PBI/cbx). Possible experiment: flip the game's own `m_positionListenerAtCamera` to
    hear the listener-at-player hybrid.
 7. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
    gunshots/vehicles by sound ID), maybe a ReShade overlay showing objects.

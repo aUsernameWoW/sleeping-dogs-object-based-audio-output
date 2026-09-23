@@ -3,11 +3,58 @@
 // The little the router needs to know about the game (UFG engine) side of the audio, from the legacy PDB and
 // the SDmodding SDK. Layouts are data, not code, so they hold for the installed build too.
 
+#include <excpt.h>
+
 #include <cstddef>
 #include <cstdint>
 
 namespace game
 {
+	// Wwise game object IDs are game pointers that may already be freed (see docs/game-audio.md) or not
+	// pointers at all, so every read of game memory goes through these SEH-guarded helpers (no C++ objects in
+	// a function with __try).
+	inline bool IsPointer(uint64_t value)
+	{
+		// The game also uses small numbers as IDs for global (2D) objects.
+		return value >= 0x10000 && value < 0x00007FFFFFFF0000ull;
+	}
+
+	inline bool ReadU32(uint64_t address, uint32_t& value)
+	{
+		__try {
+			value = *reinterpret_cast<const uint32_t*>(address);
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+	}
+
+	inline bool ReadU64(uint64_t address, uint64_t& value)
+	{
+		__try {
+			value = *reinterpret_cast<const uint64_t*>(address);
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+	}
+
+	inline bool ReadFloats3(uint64_t address, float* xyz)
+	{
+		__try {
+			const float* p = reinterpret_cast<const float*>(address);
+			xyz[0] = p[0];
+			xyz[1] = p[1];
+			xyz[2] = p[2];
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+	}
+
 	// qSymbol("PlayerOne_Havok"): the local player's SimObject name (CRC-32, poly 0x04C11DB7, no final xor).
 	constexpr uint32_t kPlayerNameUID = 0x90ECB5FF;
 
@@ -19,11 +66,18 @@ namespace game
 		constexpr size_t kPosition = 0x50; // qMatrix44 m_WorldMatrix (+0x20) row 3: world x, y, z (meters)
 	}
 
+	namespace sim_component // UFG::SimComponent, the base of every component (0x40 bytes)
+	{
+		constexpr size_t kTypeUID = 0x18; // uint32 m_TypeUID
+	}
+
 	// UFG::ActorAudioComponent = SimComponent (0x40) + AudioEntity base + own fields. Its AudioEntity base is
-	// the game object the footsteps and voice play on; a second, heap-allocated AudioEntity ("<name>__SFX")
-	// carries the character's other effects.
+	// the game object the voice, vaults and hits play on; a second, heap-allocated AudioEntity ("<name>__SFX")
+	// carries the character's other effects. Its world position is the character's transform, i.e. the root
+	// at the feet.
 	namespace actor_audio
 	{
+		constexpr uint32_t kTypeUID = 0xD2000003;
 		constexpr size_t kSize = 0x230;
 		constexpr size_t kEntityBase = 0x40;    // AudioEntity subobject inside the component
 		constexpr size_t kSfxEntity = 0x198;    // AudioEntity* m_SFXEntity (component-relative)

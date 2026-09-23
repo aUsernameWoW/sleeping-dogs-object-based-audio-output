@@ -60,7 +60,7 @@ Other threads:
 | `dllmain.cc` | Loads `SDAtmos.ini`, opens the log, installs the Wwise hooks and the overlay from `DllMain`. Runs before the game's `main` (the ASI loader is reached through `dinput8.dll`, a static import), so the sink hook is in place before Wwise initializes. |
 | `core/wwise.hh` | Wwise 2012.2 struct layouts and offsets (from the legacy PDB). |
 | `core/game.hh` | Game-side (UFG) layouts: `AudioEntity`, `ActorAudioComponent`, `OneShot`, the player's name hash, `qSymbol` CRC. |
-| `core/wwise_hooks.*` | Byte signatures, MinHook hooks (`CAkSinkXAudio2::Init/PassData/PassSilence`, `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`), voice snapshot logging, `CAkOutputMgr::m_Devices` lookup, plugin names. |
+| `core/wwise_hooks.*` | Byte signatures, MinHook hooks (`CAkSinkXAudio2::Init/PassData/PassSilence`, `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`, `AK::SoundEngine::SetPosition` for the actor lift), voice snapshot logging, `CAkOutputMgr::m_Devices` lookup, plugin names. |
 | `core/objects.*` | The voice router: candidate rules, slot assignment, ranking, crossfades, player attribution, bus effect check, Parametric EQ reproduction. |
 | `core/spatial_out.*` | The ISAC stream: bed + dynamic objects, SPSC ring with per-block object metadata, render thread, activation/reuse/release, fold-into-bed, reopen on device loss. |
 | `core/telemetry.*` | Per-buffer voice snapshot handed from the audio thread to the render thread (try-lock; the audio thread never waits). |
@@ -117,6 +117,13 @@ overlay makes ReShade run its ImGui pass every frame.
 immediately, there is no `MH_Initialize`/`MH_EnableHook`. Fine here since we hook from `DllMain` before any
 game thread exists.
 
+**Characters' sounds are lifted off the ground at the game→Wwise boundary.** Their audio entities follow
+the character root (feet), which the 7.1 bed never revealed (no height) but objects do. A hook on
+`AK::SoundEngine::SetPosition` adds `ActorLift` meters (default 1.5) to actor audio components' positions,
+so Wwise's own rays come out at head height and the router needs no listener math; the bed is unchanged
+apart from a slightly larger distance. The game's occlusion, distance RTPC and region logic use its own copy
+of the position and are unaffected.
+
 Router-specific decisions (player attribution, decay handling, bus effects) are in
 [voice-router.md](voice-router.md).
 
@@ -133,6 +140,7 @@ overwritten by deploys):
 | `Objects.Distance` | 2.0 | Radius (m) objects are placed at; Wwise already applied distance attenuation, only the direction is new information. |
 | `Objects.PlayerInBed` | 1 | The player's own sounds stay in the bed. |
 | `Objects.BusFx` | 1 | Effects other than Parametric EQ on the bus chain: 0 ignore, 1 voice stays in the bed (master excepted), 2 master included. |
+| `Objects.ActorLift` | 1.5 | Meters added to characters' audio entity positions (their root is at the feet) before Wwise sees them; 0 = off. |
 | `Overlay.*` | | HUD on/off (F8), radar, markers, labels, bed voices, marker FOV, radar range, hotkey codes. |
 | `Debug.Logging` | 1 | Write `SDAtmos.log`. |
 | `Debug.VoiceLog` | 1 | Periodic 3D voice snapshots in the log. |

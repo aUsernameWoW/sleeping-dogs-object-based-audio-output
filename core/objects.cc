@@ -140,48 +140,14 @@ namespace objects
 	constexpr float kNearPlayerMeters = 1.5f;
 
 	// The game frees entities (OneShots, the SFX entity) right after unregistering them while a last buffer of
-	// their voices can still render, and an ID isn't guaranteed to be an entity at all, so every read of game
-	// memory is SEH-guarded (no C++ objects in these functions).
-	static bool ReadU32(uint64_t address, uint32_t& value)
-	{
-		__try {
-			value = *reinterpret_cast<const uint32_t*>(address);
-			return true;
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER) {
-			return false;
-		}
-	}
-
-	static bool ReadU64(uint64_t address, uint64_t& value)
-	{
-		__try {
-			value = *reinterpret_cast<const uint64_t*>(address);
-			return true;
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER) {
-			return false;
-		}
-	}
+	// their voices can still render: reads go through the guarded helpers in game.hh.
+	using game::IsPointer;
+	using game::ReadU32;
+	using game::ReadU64;
 
 	static bool ReadPosition(uint64_t entity, float* xyz)
 	{
-		__try {
-			const float* p = reinterpret_cast<const float*>(entity + game::audio_entity::kPosition);
-			xyz[0] = p[0];
-			xyz[1] = p[1];
-			xyz[2] = p[2];
-			return true;
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER) {
-			return false;
-		}
-	}
-
-	static bool IsPointer(uint64_t value)
-	{
-		// The game also uses small numbers as IDs for global (2D) objects.
-		return value >= 0x10000 && value < 0x00007FFFFFFF0000ull;
+		return game::ReadFloats3(entity + game::audio_entity::kPosition, xyz);
 	}
 
 	static bool IsOneShotName(uint32_t nameUID)

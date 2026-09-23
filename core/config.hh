@@ -32,6 +32,10 @@ struct Config
 	// bus included.
 	std::atomic<int> mBusFx{ 1 };
 
+	// Characters' audio entities sit at the feet; lift them this many meters towards head height in the
+	// positions handed to Wwise (0 = off). Applied on the next position update of each character.
+	std::atomic<float> mActorLift{ 1.5f };
+
 	// HUD drawn over the game through ReShade (needs ReShade with add-on support).
 	std::atomic<bool> mHud{ false };
 	std::atomic<bool> mHudRadar{ true };

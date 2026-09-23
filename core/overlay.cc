@@ -352,6 +352,10 @@ namespace overlay
 			gConfig.mObjectDistance = distance;
 		}
 		Checkbox("Player's own sounds stay in the bed (footsteps, foley)", gConfig.mPlayerInBed);
+		float lift = gConfig.mActorLift.load();
+		if (ImGui::SliderFloat("Lift characters' sounds off the ground (m)", &lift, 0.0f, 3.0f, "%.1f", 0)) {
+			gConfig.mActorLift = lift;
+		}
 		int busFx = gConfig.mBusFx.load();
 		if (ImGui::Combo("Buses with effects other than EQ", &busFx, "ignore\0voices stay in the bed (master bus excepted)\0same, master bus included\0", -1)) {
 			gConfig.mBusFx = busFx;

@@ -116,4 +116,6 @@ instance rather than recomputing them.
 - `AK::SoundEngine::SetListenerPosition` (0x140a43130) is called from `UFG::Audio3DListener::Update` with a
   matrix built from the game's `AudioListener` (see [game-audio.md](game-audio.md)).
 - `AK::SoundEngine::SetPosition` (0x140a432e0) is called from `AudioEntity::ForcePositionUpdate` and
-  `AudioEntity::SetShouldFollowListener`.
+  `AudioEntity::SetShouldFollowListener`. It is a thin wrapper that enqueues an `AkQueuedMsg` of type 0xD to
+  `g_pAudioMgr`; the mod hooks it to lift actor entities (see game-audio.md). `AkSoundPosition` is
+  `{ AkVector Position; AkVector Orientation; }` (24 bytes).

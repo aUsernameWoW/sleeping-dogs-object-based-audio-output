@@ -59,6 +59,15 @@ namespace wwise
 	};
 	static_assert(offsetof(AkRunningVPL, pCbx) == 0x40 && offsetof(AkRunningVPL, bFeedbackVPL) == 0x50);
 
+	// AK::SoundEngine::SetPosition's argument. The game maps its Z-up world into it as (X, Y, Z) =
+	// (-world.y, world.z, world.x): Wwise Y is up.
+	struct AkSoundPosition
+	{
+		float position[3];
+		float orientation[3];
+	};
+	static_assert(sizeof(AkSoundPosition) == 24);
+
 	// One emitter position as seen by one listener, in Wwise's spherical coordinates.
 	struct AkRayVolumeData
 	{

@@ -51,6 +51,12 @@ namespace config
 		"; 2 = master bus included, 0 = ignore. The log lists the buses with effects.\n"
 		"BusFx = 1\n"
 		"\n"
+		"; 游戏把角色的发声位置放在脚底；这里把角色（NPC 语音等）抬高多少米到头部附近，0 = 不抬。\n"
+		"; 只影响方向和一点点距离衰减，游戏自己的遮挡/距离计算不受影响。\n"
+		"; The game positions characters' sounds at their feet; lift them this many meters (0 = off).\n"
+		"; Only the direction and a little distance attenuation change.\n"
+		"ActorLift = 1.5\n"
+		"\n"
 		"[Overlay]\n"
 		"; 需要 ReShade（支持插件的版本）。设置也可以在 ReShade 菜单的 SDAtmos 标签页里改。\n"
 		"; Needs ReShade with add-on support; everything here is also in the SDAtmos tab of the ReShade menu.\n"
@@ -129,6 +135,7 @@ namespace config
 		gConfig.mObjectDistance = ReadFloat(L"Objects", L"Distance", gConfig.mObjectDistance);
 		gConfig.mPlayerInBed = ReadBool(L"Objects", L"PlayerInBed", gConfig.mPlayerInBed);
 		gConfig.mBusFx = ReadInt(L"Objects", L"BusFx", gConfig.mBusFx);
+		gConfig.mActorLift = ReadFloat(L"Objects", L"ActorLift", gConfig.mActorLift);
 		gConfig.mHud =ReadBool(L"Overlay", L"Hud", gConfig.mHud);
 		gConfig.mHudRadar = ReadBool(L"Overlay", L"Radar", gConfig.mHudRadar);
 		gConfig.mHudMarkers = ReadBool(L"Overlay", L"Markers", gConfig.mHudMarkers);
@@ -146,6 +153,9 @@ namespace config
 		}
 		if (gConfig.mBusFx < 0 || gConfig.mBusFx > 2) {
 			gConfig.mBusFx = 1;
+		}
+		if (!(gConfig.mActorLift >= 0.0f && gConfig.mActorLift <= 3.0f)) {
+			gConfig.mActorLift = 1.5f;
 		}
 		if (!(gConfig.mObjectDistance > 0.1f && gConfig.mObjectDistance < 100.0f)) {
 			gConfig.mObjectDistance = 2.0f;
@@ -235,6 +245,7 @@ namespace config
 		SetValue(text, "Objects", "Distance", FormatFloat(gConfig.mObjectDistance));
 		SetValue(text, "Objects", "PlayerInBed", gConfig.mPlayerInBed ? "1" : "0");
 		SetValue(text, "Objects", "BusFx", std::to_string(gConfig.mBusFx.load()));
+		SetValue(text, "Objects", "ActorLift", FormatFloat(gConfig.mActorLift));
 		SetValue(text, "Overlay", "Hud", gConfig.mHud ? "1" : "0");
 		SetValue(text, "Overlay", "Radar", gConfig.mHudRadar ? "1" : "0");
 		SetValue(text, "Overlay", "Markers", gConfig.mHudMarkers ? "1" : "0");

@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "config.hh"
+#include "game.hh"
 #include "log.hh"
 #include "objects.hh"
 #include "scan.hh"
@@ -26,6 +27,11 @@ namespace wwise
 	constexpr char kSigConsumeBuffer[] =                                                     // CAkVPLMixBusNode::ConsumeBuffer(AkVPLState&, AkAudioMix*)
 		"48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 66 83 7A ? ? 49 8B F0 48 8B FA 48 8B D9 76";
 
+	// AK::SoundEngine::SetPosition(AkGameObjectID, const AkSoundPosition&): null check, then an AkQueuedMsg of
+	// type 0xD (68-byte frame).
+	constexpr char kSigSetPosition[] =
+		"48 83 EC 68 48 85 C9 75 0A B8 02 00 00 00 48 83 C4 68 C3 0F 10 02 F2 0F 10 4A 10 B8 0D 00 00 00 66 89 44 24 22 48 89 4C 24 28";
+
 	// CAkLEngine::AnalyzeMixingGraph, where a top-level bus looks up its device's final mix:
 	//   mov r8d, [rip + m_Devices.m_uLength]; mov eax, ebp; test r8d, r8d; jz; mov r11, [rip + m_Devices.m_pItems]
 	constexpr char kSigDevices[] = "44 8B 05 ? ? ? ? 8B C5 45 85 C0 74 ? 4C 8B 1D ? ? ? ? 4C 8B 92 58 05 00 00 49 8D 4B 18 4C 39 11";
@@ -38,12 +44,14 @@ namespace wwise
 	using SinkPassFn = AKRESULT(__fastcall*)(void* self);
 	using RunVPLFn = void(__fastcall*)(AkRunningVPL* vpl);
 	using ConsumeBufferFn = void(__fastcall*)(void* mixBus, AkVPLState* state, AkAudioMix* mix);
+	using SetPositionFn = AKRESULT(__fastcall*)(uint64_t gameObj, const AkSoundPosition* position);
 
 	static SinkInitFn gSinkInit = nullptr;
 	static SinkPassFn gPassData = nullptr;
 	static SinkPassFn gPassSilence = nullptr;
 	static RunVPLFn gRunVPL = nullptr;
 	static ConsumeBufferFn gConsumeBuffer = nullptr;
+	static SetPositionFn gSetPosition = nullptr;
 
 	static const uint32_t* gSampleRate = nullptr;
 	static const uint8_t* gDevices = nullptr; // CAkOutputMgr::m_Devices: AkDevice* pItems, uint32 length
@@ -280,6 +288,25 @@ namespace wwise
 		}
 	}
 
+	// Game thread. Characters' audio entities sit at the character root (the feet), so NPC speech comes from
+	// the ground; as objects with real elevation that is audible, in the 7.1 bed it never was (no height). Lift
+	// the position of actor audio components towards head height before Wwise sees it. Only the direction and
+	// a slightly larger distance change; the game's own occlusion, distance RTPCs and regions use its own copy
+	// of the position.
+	static AKRESULT __fastcall SetPositionHook(uint64_t gameObj, const AkSoundPosition* position)
+	{
+		const float lift = gConfig.mActorLift.load(std::memory_order_relaxed);
+		uint32_t typeUID = 0;
+		if (lift > 0.0f && position && game::IsPointer(gameObj) &&
+			game::ReadU32(gameObj - game::actor_audio::kEntityBase + game::sim_component::kTypeUID, typeUID) &&
+			typeUID == game::actor_audio::kTypeUID) {
+			AkSoundPosition lifted = *position;
+			lifted.position[1] += lift;
+			return gSetPosition(gameObj, &lifted);
+		}
+		return gSetPosition(gameObj, position);
+	}
+
 	static AKRESULT __fastcall SinkInitHook(void* self, void* settings, uint32_t channelMask, uint32_t sinkType)
 	{
 		uint32_t mask = channelMask;
@@ -389,6 +416,10 @@ namespace wwise
 			}
 			LOG("hook: voice hooks %s, dynamic objects %s at start (max %d, %.1f m)", gVoiceHooks ? "ready" : "MISSING",
 				gVoiceHooks && gBedEnabled && gConfig.mObjects ? "on" : "off", gConfig.mMaxObjects.load(), gConfig.mObjectDistance.load());
+
+			uint8_t* setPosition = scan::FindUnique("AK::SoundEngine::SetPosition", kSigSetPosition);
+			const bool liftHook = Hook("SetPosition", setPosition, &SetPositionHook, gSetPosition);
+			LOG("hook: actor position hook %s, lift %.2f m", liftHook ? "ready" : "MISSING", gConfig.mActorLift.load());
 		}
 	}
 }

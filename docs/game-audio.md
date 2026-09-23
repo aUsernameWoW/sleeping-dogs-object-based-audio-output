@@ -29,6 +29,14 @@ SDK headers (`reference\SDmodding\SDK`, e.g. `audio/audioentity.hh`, `tido/actor
   `AudioEntity`, `m_SFXEntity` (`+0x198`), named "<SimObject name>__SFX"** for effects on another bus. It
   shuts both down again when the character leaves that range.
 - `+0x1C0` `m_leftFootstep` and `+0x1C8` `m_rightFootstep` are `OneShotHandle`s (each just a `OneShot*`).
+- `SimComponent::m_TypeUID` (`+0x18` of the component) is `0xD2000003` for actor audio components
+  (`0xD2000001` for the plain `HkAudioEntityComponent`), which is how the mod recognizes one from its entity
+  address (entity − 0x40).
+- The entity's world matrix is the character's transform node, i.e. the **root at the feet**; NPC speech
+  therefore comes from ground level. `AudioEntityUpdate` (0x140142d80) pushes it to Wwise
+  (`ForcePositionUpdate` → `AK::SoundEngine::SetPosition`) only when the character moved more than 0.1 m,
+  mapping the Z-up world as Wwise (X, Y, Z) = (−world.y, world.z, world.x), orientation from matrix row 0.
+  The mod's `SetPosition` hook adds `ActorLift` (default 1.5 m) to Wwise Y for actor components.
 - `PlayFootstep(stepID, handle)` (0x1405a6120) sets switches on the one-shot (footwear type from the
   character or the player's current outfit, surface material from the ground under the character or
   `surface_water`, `loc_footstep_type`) and posts `loc_footsteps_p` **on the one-shot's entity**, not on the
