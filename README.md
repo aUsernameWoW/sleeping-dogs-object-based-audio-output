@@ -18,6 +18,10 @@ Wwise 引擎，改由 `ISpatialAudioClient` 输出：
   信号作为动态对象送出，方向就用 Wwise 为它算好的方向，包括高度。原本的 7.1 声像器会把高度压平。环境声、混响、
   spread 很大的声音这类扩散声仍留在床里；声音数量超过格式允许的对象数（HDMI 上为 20 个）时，多出来的并回床里，
   这也是 Dolby 游戏音频指南推荐的做法。
+- **7.1.4 高度声道**：游戏本身没有高度内容，mod 在各条总线把输出交给上级总线的位置，把扩散类声音的一部分
+  抬到床的四个顶部声道：天气（雨、雷、风）和鸟叫抬得最多，其余环境声（城市、人群、水）和混响返回少一些；地面声道
+  相应减去同样的能量。抬上去的信号经过短延迟 + 全通 + 高通的去相关处理，前后两对不同，这是 Dolby/DTS 上混器和
+  Atmos 混音指南的通行做法。
 - **不绑定 Dolby**：对象上限、床布局和格式都在运行时向系统查询，所以 DTS:X for Home Theater、Windows Sonic 也走
   同一条路径（目前只在 Dolby Atmos for home theater 上测试过）。
 
@@ -52,6 +56,7 @@ Wwise 引擎，改由 `ISpatialAudioClient` 输出：
 游戏内：
 
 - **F9**：开关动态对象，用来和纯 7.1 声道床做 A/B 对比。
+- **F7**：开关高度声道（A/B 对比）。
 - **F8**：HUD（需要 ReShade）。显示所有带位置的声音的雷达图，并在画面上标出它们的方向。青色 = 对象，黄色 =
   符合条件但在排队，灰色 = 留在床里，绿色 = 沈威自己的声音（留在床里，`PlayerInBed`），橙色 = 所在总线带插入
   效果（留在床里，`BusFx`）。
@@ -98,6 +103,11 @@ theater doesn't upmix: channel streams go out as Dolby Audio (DD/DD+), and only 
   Diffuse sounds (ambience, reverb, sounds with wide spread) stay in the bed. When there are more sounds than
   the format allows objects (20 over HDMI), the extra ones fold into the bed, as Dolby's game guidelines
   recommend.
+- **7.1.4 height channels**: the game has no height content of its own. Where each bus hands its output to
+  its parent, the mod moves a share of the diffuse material up into the bed's four top channels: weather
+  (rain, thunder, wind) and birds the most, the rest of the ambience (city, crowds, water) and reverb returns
+  less; the floor loses the same energy. The lifted signal is decorrelated (short delay + all-passes +
+  high-pass, front and back pairs different), which is what Dolby/DTS upmixers and Atmos mixing guides do.
 - **Nothing Dolby-specific**: object limits, bed layout and format are queried at runtime, so DTS:X for Home
   Theater and Windows Sonic go through the same path (only Dolby Atmos for home theater has been tested).
 
@@ -135,6 +145,7 @@ next to itself (bilingual, Chinese/English) and logs to `SDAtmos.log`.
 In game:
 
 - **F9**: dynamic objects on/off. This is an A/B switch against the plain 7.1 bed.
+- **F7**: height channels on/off (A/B).
 - **F8**: HUD (needs ReShade). It shows a radar of every positioned sound and markers at their on-screen
   directions. Cyan = object, yellow = qualifies but waiting, gray = stays in the bed, green = the player's
   own sounds (kept in the bed, `PlayerInBed`), orange = its bus runs insert effects (kept in the bed, `BusFx`).

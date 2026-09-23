@@ -18,6 +18,7 @@
 namespace spatial
 {
 	constexpr uint32_t kMaxChannels = 8;
+	constexpr uint32_t kMaxBed = kMaxChannels + kHeights; // floor channels, then the heights
 	constexpr uint32_t kRingFrames = 16384; // ~340 ms at 48 kHz
 	constexpr uint32_t kBlockRing = 64;     // block metadata entries; the ring holds at most 16 blocks
 
@@ -36,9 +37,14 @@ namespace spatial
 	static uint32_t gSampleRate = 0;
 	static uint32_t gChannelMask = 0;
 	static uint32_t gChannels = 0;
-	static uint32_t gStride = 0; // floats per ring frame: bed channels, then kMaxObjects object samples
+	static uint32_t gStride = 0; // floats per ring frame: bed channels, kHeights height samples, kMaxObjects object samples
 	static bool gObjectsWanted = false;
+	static bool gHeightsWanted = false;
 	static AudioObjectType gChannelTypes[kMaxChannels] = {};
+	static constexpr AudioObjectType kHeightTypes[kHeights] = {
+		AudioObjectType_TopFrontLeft, AudioObjectType_TopFrontRight, AudioObjectType_TopBackLeft, AudioObjectType_TopBackRight };
+	static constexpr AudioObjectType kHeightMask = static_cast<AudioObjectType>(
+		AudioObjectType_TopFrontLeft | AudioObjectType_TopFrontRight | AudioObjectType_TopBackLeft | AudioObjectType_TopBackRight);
 
 	// Horizontal speakers of the bed, for folding an object back into it when Windows won't give us one.
 	struct PanSpeaker
@@ -64,6 +70,7 @@ namespace spatial
 	static std::atomic<uint64_t> gRead{ 0 };       // frames; consumer: render thread
 	static std::atomic<bool> gActive{ false };
 	static std::atomic<uint32_t> gObjectSlots{ 0 };
+	static std::atomic<uint32_t> gHeightCount{ 0 };
 	static std::atomic<uint64_t> gOverflowFrames{ 0 };
 
 	static Status gStatus;
@@ -103,7 +110,12 @@ namespace spatial
 		return gObjectSlots.load(std::memory_order_acquire);
 	}
 
-	void Push(const float* interleaved, uint32_t frames, const ObjectBlock* objects)
+	bool HeightsActive()
+	{
+		return gHeightCount.load(std::memory_order_acquire) != 0;
+	}
+
+	void Push(const float* interleaved, uint32_t frames, const float* const* heights, const ObjectBlock* objects)
 	{
 		const uint64_t written = gWritten.load(std::memory_order_relaxed);
 		const uint64_t read = gRead.load(std::memory_order_acquire);
@@ -125,7 +137,11 @@ namespace spatial
 			else {
 				std::memset(dst, 0, gChannels * sizeof(float));
 			}
-			float* objectDst = dst + gChannels;
+			float* heightDst = dst + gChannels;
+			for (uint32_t h = 0; h < kHeights; ++h) {
+				heightDst[h] = heights ? std::clamp(heights[h][i], -1.0f, 1.0f) : 0.0f;
+			}
+			float* objectDst = heightDst + kHeights;
 			for (uint32_t s = 0; s < kMaxObjects; ++s) {
 				objectDst[s] = (mask & (1u << s)) ? objects->mSamples[s][i] : 0.0f;
 			}
@@ -229,7 +245,8 @@ namespace spatial
 		IMMDevice* mDevice = nullptr;
 		ISpatialAudioClient* mClient = nullptr;
 		ISpatialAudioObjectRenderStream* mStream = nullptr;
-		ISpatialAudioObject* mBed[kMaxChannels] = {};
+		ISpatialAudioObject* mBed[kMaxBed] = {}; // floor channels, then mHeights height channels
+		uint32_t mHeights = 0;
 		Slot mSlots[kMaxObjects] = {};
 		uint32_t mSlotCount = 0;
 		HANDLE mEvent = nullptr;
@@ -329,6 +346,18 @@ namespace spatial
 			LOG("spatial: bed channels [%s] aren't all native to this format [%s]",
 				DescribeMask(mask).c_str(), DescribeMask(nativeMask).c_str());
 		}
+		// Heights only where the format renders them itself: a folded-down height channel would just be a
+		// delayed, filtered copy of the floor.
+		s.mHeights = 0;
+		if (gHeightsWanted) {
+			if ((nativeMask & kHeightMask) == kHeightMask) {
+				s.mHeights = kHeights;
+				mask = static_cast<AudioObjectType>(mask | kHeightMask);
+			}
+			else {
+				LOG("spatial: this format's bed has no height channels [%s], height bed off", DescribeMask(nativeMask).c_str());
+			}
+		}
 
 		s.mSlotCount = gObjectsWanted ? std::min(maxDynamic, kMaxObjects) : 0;
 
@@ -352,10 +381,11 @@ namespace spatial
 			return hr;
 		}
 
-		for (uint32_t c = 0; c < gChannels; ++c) {
-			hr = s.mStream->ActivateSpatialAudioObject(gChannelTypes[c], &s.mBed[c]);
+		for (uint32_t c = 0; c < gChannels + s.mHeights; ++c) {
+			const AudioObjectType type = c < gChannels ? gChannelTypes[c] : kHeightTypes[c - gChannels];
+			hr = s.mStream->ActivateSpatialAudioObject(type, &s.mBed[c]);
 			if (FAILED(hr)) {
-				LOG("spatial: bed object 0x%X failed (0x%08lX)", static_cast<unsigned>(gChannelTypes[c]), hr);
+				LOG("spatial: bed object 0x%X failed (0x%08lX)", static_cast<unsigned>(type), hr);
 				return hr;
 			}
 		}
@@ -367,12 +397,13 @@ namespace spatial
 		}
 
 		LOG("spatial: stream started on %s: bed [%s] (%u ch), %u Hz, %u dynamic objects (format allows %u, native statics [%s])",
-			endpointName.c_str(), DescribeMask(mask).c_str(), gChannels, gSampleRate, s.mSlotCount, maxDynamic,
+			endpointName.c_str(), DescribeMask(mask).c_str(), gChannels + s.mHeights, gSampleRate, s.mSlotCount, maxDynamic,
 			DescribeMask(nativeMask).c_str());
 		UpdateStatus([&](Status& status) {
 			status = {};
 			strncpy_s(status.mEndpoint, endpointName.c_str(), _TRUNCATE);
 			strncpy_s(status.mBed, DescribeMask(mask).c_str(), _TRUNCATE);
+			status.mHeights = s.mHeights;
 			status.mSlots = s.mSlotCount;
 			status.mFormatMax = maxDynamic;
 		});
@@ -388,7 +419,7 @@ namespace spatial
 		uint64_t mTrimmedFrames = 0;
 		uint32_t mFillMin = UINT32_MAX;
 		uint32_t mFillMax = 0;
-		float mPeak[kMaxChannels] = {};
+		float mPeak[kMaxBed] = {};
 		uint32_t mObjectsMax = 0;       // slots with sound in one pass
 		uint64_t mObjectPasses = 0;     // sum over passes of slots with sound (for the average)
 		uint32_t mWindowsObjectsMax = 0; // Windows objects held at once
@@ -403,7 +434,7 @@ namespace spatial
 	{
 		char peaks[160] = {};
 		size_t used = 0;
-		for (uint32_t c = 0; c < gChannels && used < sizeof(peaks); ++c) {
+		for (uint32_t c = 0; c < gChannels + gHeightCount.load(std::memory_order_relaxed) && used < sizeof(peaks); ++c) {
 			const float db = stats.mPeak[c] > 0.0f ? 20.0f * std::log10(stats.mPeak[c]) : -99.0f;
 			used += static_cast<size_t>(snprintf(peaks + used, sizeof(peaks) - used, " %.0f", db));
 		}
@@ -450,6 +481,8 @@ namespace spatial
 		uint64_t blockCursor = gBlockCount.load(std::memory_order_acquire);
 		gActive.store(true, std::memory_order_release);
 		gObjectSlots.store(s.mSlotCount, std::memory_order_release);
+		gHeightCount.store(s.mHeights, std::memory_order_release);
+		const uint32_t bed = gChannels + s.mHeights;
 
 		bool primed = false;
 		uint32_t windowMinSlack = UINT32_MAX;
@@ -478,8 +511,8 @@ namespace spatial
 				return hr;
 			}
 
-			float* out[kMaxChannels] = {};
-			for (uint32_t c = 0; c < gChannels; ++c) {
+			float* out[kMaxBed] = {};
+			for (uint32_t c = 0; c < bed; ++c) {
 				BYTE* buffer = nullptr;
 				UINT32 bytes = 0;
 				hr = s.mBed[c]->GetBuffer(&buffer, &bytes);
@@ -504,8 +537,10 @@ namespace spatial
 			if (primed) {
 				copied = std::min(fill, frameCount);
 				for (uint32_t i = 0; i < copied; ++i) {
+					// Ring frame: floor channels, then kHeights height samples (the bed's height objects follow
+					// the floor ones directly), then the object samples.
 					const float* frame = &gRing[((read + i) % kRingFrames) * gStride];
-					for (uint32_t c = 0; c < gChannels; ++c) {
+					for (uint32_t c = 0; c < bed; ++c) {
 						out[c][i] = frame[c];
 						stats.mPeak[c] = std::max(stats.mPeak[c], std::fabs(frame[c]));
 					}
@@ -521,7 +556,7 @@ namespace spatial
 					windowMinSlack = std::min(windowMinSlack, fill - copied);
 				}
 			}
-			for (uint32_t c = 0; c < gChannels; ++c) {
+			for (uint32_t c = 0; c < bed; ++c) {
 				std::fill(out[c] + copied, out[c] + frameCount, 0.0f);
 			}
 
@@ -587,7 +622,7 @@ namespace spatial
 					if (SUCCEEDED(slot.mObject->GetBuffer(&buffer, &bytes))) {
 						float* dst = reinterpret_cast<float*>(buffer);
 						for (uint32_t i = 0; i < copied; ++i) {
-							dst[i] = gRing[((read + i) % kRingFrames) * gStride + gChannels + slotIndex];
+							dst[i] = gRing[((read + i) % kRingFrames) * gStride + gChannels + kHeights + slotIndex];
 							stats.mObjectPeak = std::max(stats.mObjectPeak, std::fabs(dst[i]));
 						}
 						std::fill(dst + copied, dst + frameCount, 0.0f);
@@ -599,7 +634,7 @@ namespace spatial
 					float gains[kMaxChannels];
 					PanGains(std::atan2(pos[0], -pos[2]) * 57.29578f, gains);
 					for (uint32_t i = 0; i < copied; ++i) {
-						const float sample = gRing[((read + i) % kRingFrames) * gStride + gChannels + slotIndex];
+						const float sample = gRing[((read + i) % kRingFrames) * gStride + gChannels + kHeights + slotIndex];
 						for (uint32_t c = 0; c < gChannels; ++c) {
 							out[c][i] += sample * gains[c];
 						}
@@ -674,6 +709,7 @@ namespace spatial
 				if (SUCCEEDED(hr)) {
 					hr = Run(stream);
 					gObjectSlots.store(0, std::memory_order_release);
+					gHeightCount.store(0, std::memory_order_release);
 					UpdateStatus([](Status& status) { status.mActive = false; status.mSounding = status.mHeld = 0; });
 					gActive.store(false, std::memory_order_release);
 					LOG("spatial: stream stopped (0x%08lX), game back on XAudio2 until it reopens", hr);
@@ -722,7 +758,7 @@ namespace spatial
 		return result;
 	}
 
-	void Start(uint32_t sampleRate, uint32_t channelMask, bool objects)
+	void Start(uint32_t sampleRate, uint32_t channelMask, bool objects, bool heights)
 	{
 		static bool started = false;
 		if (started) {
@@ -735,7 +771,8 @@ namespace spatial
 		gSampleRate = sampleRate;
 		gChannelMask = channelMask;
 		gObjectsWanted = objects;
-		gStride = gChannels + kMaxObjects;
+		gHeightsWanted = heights;
+		gStride = gChannels + kHeights + kMaxObjects;
 		gRing = std::make_unique<float[]>(static_cast<size_t>(kRingFrames) * gStride);
 
 		HANDLE thread = CreateThread(nullptr, 0, ThreadMain, nullptr, 0, nullptr);

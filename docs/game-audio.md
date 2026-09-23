@@ -90,15 +90,47 @@ every frame by `AudioListener::Update` (0x14014d410):
   So the engine natively supports the "attenuation from the player, panning from the camera" hybrid, and
   scripts switch to it in specific situations. Flipping the byte from the mod is an untried experiment.
 
-## Buses seen in-game
+## The bus hierarchy (Init.bnk)
 
-Only insert effects are logged (`objects: bus ... fx:` lines), so the bus tree is only partially known:
+`Init.bnk` (bank ID 0x50C63A23, 94 KB, chunks STMG/HIRC/ENVS) sits inside `data\Audio\SD2\SFX.pck`. The
+AKPK header is `AKPK, header size, version 1, language-map length, banks-table length, streams-table
+length`; the banks table is `count` then 24-byte entries `id, block size, size, pad, offset (in blocks),
+language`. The HIRC chunk holds 2589 objects (`type u8, size u32, id u32, body`): 279 buses (type 8),
+28 aux buses (type 19), 31 effect instances (type 18: 27 ConvolutionReverb, Meters, EQs, one
+MatrixReverb), 2204 states and a few others. A bus body starts with its parent's ID.
 
-- A top-level bus (parent = null) with a Parametric EQ that most world SFX go through.
-- A bus with a Meter (side-chain metering for ducking/RTPC; ignored by the router). Note that carving object
-  voices out of the bed lowers what such meters measure; no audible consequence found so far.
-- The master (device final mix) has no insert effects.
-- The game sends nothing to LFE (≈ -110 dBFS all session); bass management is the receiver's job.
+Bus names are FNV-1 (32-bit, lowercase) hashes; a dictionary attack recovered 59 of 307, enough for the
+routing decisions. The relevant part of the tree (IDs in decimal, `?` = name unknown):
+
+```
+3444197610 ?  (root; "Master Audio Bus" 3803692087 is not used, 805203703 = Master Secondary Bus)
+├ 1900298039 master_music      (Parametric EQ; ui_music, ambient_music, radio_car, karaoke_player...)
+├ 2640427754 ?
+│ └ 1973600711 ?
+│   ├ 3627036714 master_dialog
+│   ├ 3946296192 master_aux     (env, meter; where the aux buses return)
+│   ├ 3995202064 master_hdr
+│   │ ├ 1970697714 ? (indoor ...)
+│   │ └ 3462011115 master_sfx
+│   │   ├ 77978275 ambient       ← height bed "ambience" tier
+│   │   │ └ 2276207995 ?
+│   │   │   ├ 317282339 weather  ← "sky" tier: 186852181 thunder (distant/close), 1537061107 wind, 2043403999 rain
+│   │   │   ├ 352130103 birds    ← "sky" tier
+│   │   │   ├ 3888786832 city (Meter) → 3463109076 traffic
+│   │   │   ├ crowds (689383231 crowd_market, 1587111019 crowd_club, 1854869158 crowd_restaurant)
+│   │   │   ├ 2458178259 water_amb, 1930490682 boat_amb, 1830469890 interior_rain, kitchens...
+│   │   └ 393239870 sfx         (fight_foley, fight_impacts, fight_falls, foley, footsteps (Meter),
+│   │                             collisions (Meter), glass, ui, gunshot, bullet_impacts, ricochets,
+│   │                             police_siren (Meter), 1667833844 (Parametric EQ)...)
+│   └ 4167303992 ? (medium_explosion...)
+└ 3474110328 ?
+28 aux buses (type 19), each running a ConvolutionReverb/MatrixReverb shareset  ← "reverb" tier
+```
+
+Observed in-game before the bank was parsed: a top-level bus with a Parametric EQ (1900298039 = master_music,
+also 1667833844 under sfx), Meters (side-chain metering for ducking/RTPC; ignored by the router; carving
+object voices out of the bed lowers what they measure, no audible consequence found), no effects on the
+master. The game sends nothing to LFE (≈ -110 dBFS all session); bass management is the receiver's job.
 
 Voice counts observed: up to ~38 dry voices, ~36 of them 3D, ~30 aux sends in a street fight; 468 of 544
 logged 3D voices were mono; many ambience emitters use full spread (gains 0.41-0.45 over 5-6 speakers).

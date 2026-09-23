@@ -32,6 +32,7 @@ namespace overlay
 
 	static bool gHudRegistered = false;
 	static std::atomic<ULONGLONG> gBannerUntil{ 0 }; // A/B toggle banner, shown even with the HUD off
+	static std::atomic<int> gBannerKind{ 0 };        // 0 = objects toggled, 1 = heights toggled
 	static telemetry::Frame gFrame;                  // render thread only
 
 	// ---- Hotkeys ----
@@ -49,17 +50,27 @@ namespace overlay
 	{
 		bool objectsDown = false;
 		bool hudDown = false;
+		bool heightsDown = false;
 		for (;;) {
 			Sleep(25);
 			const bool foreground = GameIsForeground();
 			const bool objectsNow = foreground && gConfig.mToggleObjectsKey && (GetAsyncKeyState(gConfig.mToggleObjectsKey) & 0x8000);
 			const bool hudNow = foreground && gConfig.mToggleHudKey && (GetAsyncKeyState(gConfig.mToggleHudKey) & 0x8000);
+			const bool heightsNow = foreground && gConfig.mToggleHeightsKey && (GetAsyncKeyState(gConfig.mToggleHeightsKey) & 0x8000);
 
 			if (objectsNow && !objectsDown) {
 				const bool on = !gConfig.mObjects.load();
 				gConfig.mObjects = on;
+				gBannerKind = 0;
 				gBannerUntil = GetTickCount64() + kBannerMs;
 				LOG("hotkey: dynamic objects %s", on ? "ON" : "OFF (bed only)");
+			}
+			if (heightsNow && !heightsDown) {
+				const bool on = !gConfig.mHeights.load();
+				gConfig.mHeights = on;
+				gBannerKind = 1;
+				gBannerUntil = GetTickCount64() + kBannerMs;
+				LOG("hotkey: height bed %s", on ? "ON" : "OFF (floor only)");
 			}
 			if (hudNow && !hudDown) {
 				const bool on = !gConfig.mHud.load();
@@ -68,6 +79,7 @@ namespace overlay
 			}
 			objectsDown = objectsNow;
 			hudDown = hudNow;
+			heightsDown = heightsNow;
 		}
 	}
 
@@ -200,10 +212,11 @@ namespace overlay
 		for (uint32_t i = 0; i < gFrame.mVoiceCount; ++i) {
 			objects += gFrame.mVoices[i].mReason == Reason::Object;
 		}
-		char line[160];
+		char line[200];
 		const bool on = gConfig.mObjects.load();
-		snprintf(line, sizeof(line), "SDAtmos  objects %s  %u/%u  voices %u (+%u 2D)  latency %.0f ms%s",
-			on ? "ON" : "OFF", objects, gFrame.mObjectsTarget, gFrame.mVoiceCount, gFrame.mUnpositioned,
+		const char* heights = !status.mHeights ? "n/a" : gConfig.mHeights.load() ? "ON" : "OFF";
+		snprintf(line, sizeof(line), "SDAtmos  objects %s  %u/%u  heights %s  voices %u (+%u 2D)  latency %.0f ms%s",
+			on ? "ON" : "OFF", objects, gFrame.mObjectsTarget, heights, gFrame.mVoiceCount, gFrame.mUnpositioned,
 			status.mFill / 48.0f, status.mActive ? "" : "  [spatial stream DOWN]");
 		const ImVec2 size = ImGui::CalcTextSize(line, nullptr, false, -1.0f);
 		const ImVec2 pos(display.x - size.x - 24.0f * scale, c.y + radius + 8.0f * scale);
@@ -262,8 +275,10 @@ namespace overlay
 
 	static void DrawBanner(ImDrawList* draw, const ImVec2& display, float scale)
 	{
-		const bool on = gConfig.mObjects.load();
-		const char* text = on ? "SDAtmos: dynamic objects ON" : "SDAtmos: objects OFF (7.1 bed only)";
+		const bool heights = gBannerKind.load() == 1;
+		const bool on = heights ? gConfig.mHeights.load() : gConfig.mObjects.load();
+		const char* text = heights ? (on ? "SDAtmos: height bed ON" : "SDAtmos: height bed OFF (floor only)")
+			: (on ? "SDAtmos: dynamic objects ON" : "SDAtmos: objects OFF (7.1 bed only)");
 		ImFont* font = ImGui::GetFont();
 		// ImFont::CalcTextSizeA isn't in ReShade's function table; text width scales linearly with font size.
 		const float size = ImGui::GetFontSize() * 2.0f;
@@ -333,7 +348,8 @@ namespace overlay
 
 		if (status.mActive) {
 			ImGui::Text("Spatial stream: %s", status.mEndpoint);
-			ImGui::Text("Bed [%s], %u dynamic objects reserved (format allows %u)", status.mBed, status.mSlots, status.mFormatMax);
+			ImGui::Text("Bed [%s]%s, %u dynamic objects reserved (format allows %u)", status.mBed,
+				status.mHeights ? " with heights" : "", status.mSlots, status.mFormatMax);
 			ImGui::Text("Latency %.0f ms | objects sounding %u, held %u | underruns %llu | failed %llu | folded %llu",
 				status.mFill / 48.0f, status.mSounding, status.mHeld, status.mUnderruns, status.mActivationFailures, status.mFoldedPasses);
 		}
@@ -360,6 +376,21 @@ namespace overlay
 		if (ImGui::Combo("Buses with effects other than EQ", &busFx, "ignore\0voices stay in the bed (master bus excepted)\0same, master bus included\0", -1)) {
 			gConfig.mBusFx = busFx;
 		}
+
+		ImGui::Separator();
+		Checkbox("Height bed: diffuse content overhead (A/B hotkey: F7 by default)", gConfig.mHeights);
+		if (status.mActive && !status.mHeights) {
+			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "This spatial format's bed has no height channels.");
+		}
+		struct Share { const char* mLabel; std::atomic<float>* mValue; };
+		for (const Share& share : { Share{ "Weather / birds share (dB)", &gConfig.mHeightSky },
+			Share{ "Other ambience share (dB)", &gConfig.mHeightAmbience }, Share{ "Reverb share (dB)", &gConfig.mHeightReverb } }) {
+			float db = share.mValue->load();
+			if (ImGui::SliderFloat(share.mLabel, &db, -24.0f, 0.0f, "%.1f", 0)) {
+				*share.mValue = db;
+			}
+		}
+		ImGui::TextDisabled("0 dB = the whole bus goes up (the floor keeps nothing), -6 dB = a quarter of its power. Decorrelation settings are in the ini.");
 
 		ImGui::Separator();
 		Checkbox("HUD (F8 by default)", gConfig.mHud);
@@ -434,7 +465,8 @@ namespace overlay
 		if (thread) {
 			CloseHandle(thread);
 		}
-		LOG("overlay: hotkeys 0x%X = objects on/off, 0x%X = HUD", gConfig.mToggleObjectsKey, gConfig.mToggleHudKey);
+		LOG("overlay: hotkeys 0x%X = objects on/off, 0x%X = HUD, 0x%X = height bed on/off", gConfig.mToggleObjectsKey,
+			gConfig.mToggleHudKey, gConfig.mToggleHeightsKey);
 
 		// ReShade (dxgi.dll) is a static import of the exe, so it's loaded before the ASI loader runs us.
 		if (!reshade::register_addon(self)) {

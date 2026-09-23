@@ -36,6 +36,29 @@ struct Config
 	// positions handed to Wwise (0 = off). Applied on the next position update of each character.
 	std::atomic<float> mActorLift{ 1.5f };
 
+	// --- Height bed (7.1.4): diffuse content derived from the floor channels, see core/heights.hh ---
+
+	// Feed the four top bed channels (A/B switch; needs a spatial format whose bed has them, e.g. Atmos).
+	std::atomic<bool> mHeights{ true };
+
+	// Share (dB) of each source kind's floor output moved up. -60 or less = none.
+	std::atomic<float> mHeightSky{ -3.0f };      // weather, birds: rain and thunder do come from above
+	std::atomic<float> mHeightAmbience{ -6.0f }; // the rest of the ambient subtree (city, crowds, water...)
+	std::atomic<float> mHeightReverb{ -6.0f };   // buses running a reverb effect (the aux returns)
+
+	// Decorrelation of the height channels (static; see height_dsp.hh): pre-delay in ms (the back pair gets
+	// 4 ms more), high-pass in Hz (0 = off).
+	float mHeightDelay = 8.0f;
+	float mHeightHighPass = 200.0f;
+
+	// Bus IDs (Wwise short IDs from Init.bnk) whose output is treated as sky / ambience when it enters its
+	// parent. Reverb buses are recognized by their effects instead.
+	static constexpr int kMaxBusIds = 8;
+	uint32_t mSkyBuses[kMaxBusIds] = { 317282339, 352130103 }; // weather, birds
+	int mSkyBusCount = 2;
+	uint32_t mAmbienceBuses[kMaxBusIds] = { 77978275 }; // ambient
+	int mAmbienceBusCount = 1;
+
 	// HUD drawn over the game through ReShade (needs ReShade with add-on support).
 	std::atomic<bool> mHud{ false };
 	std::atomic<bool> mHudRadar{ true };
@@ -48,6 +71,7 @@ struct Config
 	// Virtual-key codes.
 	int mToggleObjectsKey = 0x78; // VK_F9
 	int mToggleHudKey = 0x77;     // VK_F8
+	int mToggleHeightsKey = 0x76; // VK_F7
 
 	// Write SDAtmos.log next to the .asi.
 	bool mLogging = true;

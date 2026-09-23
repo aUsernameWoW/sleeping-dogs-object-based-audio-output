@@ -34,6 +34,11 @@ Status (2026-09-22):
   an effect: a top-level bus (id 1900298039, feeds the final mix) with a Parametric EQ; the master has none.
   `BusFx = 1` had pushed everything under it into the bed (3/20 objects on the HUD), so objects now run that
   EQ themselves instead.
+- 2026-09-23, later: **height bed** built (`docs\height-bed.md`): the bed is 7.1.4, the four top channels are
+  fed from the ambient/weather/birds buses and the reverb aux buses at their bus→parent transfer, decorrelated.
+  Builds, `heights_test` passes, deployed; **awaiting the in-game check** (log should show `bed [... TFL TFR
+  TBL TBR] (12 ch)`, `heights: bus ... carves as ...` lines; F7 A/B by ear: rain/thunder overhead, nothing
+  else moving, loudness unchanged).
 
 Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
 voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
@@ -45,20 +50,25 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
 - `core/wwise.hh` — Wwise 2012.2 struct layouts/offsets from the legacy PDB.
 - `core/game.hh` — the game (UFG) side: AudioEntity/ActorAudioComponent offsets, the player's name hash.
 - `core/wwise_hooks.*` — signatures + hooks: `CAkSinkXAudio2::Init/PassData/PassSilence`,
-  `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`, `AK::SoundEngine::SetPosition` (actor lift);
-  voice snapshot logging.
+  `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer` (voice variant), the bus→parent variants
+  `CAkVPLMixBusNode::ConsumeBuffer(AkAudioBufferBus&,...)` + `CAkVPLFinalMixNode::ConsumeBuffer` (height bed),
+  `AK::SoundEngine::SetPosition` (actor lift); voice snapshot logging.
 - `core/objects.*` — voice router: which voices become objects, sample capture, bed/object crossfades,
   per-voice report (position, level, role, why it stays in the bed).
+- `core/heights.*`, `core/height_dsp.hh` — height bed: tiers (sky / ambience by bus ID, reverb by bus FX),
+  energy-preserving carve at the bus transfer, decorrelator (pre-delay + all-passes + high-pass); the DSP
+  header has no engine dependencies (tested offline).
 - `core/telemetry.*` — per-buffer voice snapshot, audio thread → render thread (try-lock, never blocks audio).
-- `core/overlay.*` — hotkey thread (F9 objects A/B, F8 HUD), ReShade add-on: "SDAtmos" menu tab (settings,
-  stream status, voice table, save to ini) and HUD (radar, on-screen markers, A/B banner).
-- `core/spatial_out.*` — ISAC stream (bed + dynamic objects), SPSC ring with per-block object metadata,
-  render thread, object activation/reuse/release, fold-into-bed fallback, reopen on device loss.
+- `core/overlay.*` — hotkey thread (F9 objects A/B, F7 heights A/B, F8 HUD), ReShade add-on: "SDAtmos" menu
+  tab (settings, stream status, voice table, save to ini) and HUD (radar, on-screen markers, A/B banner).
+- `core/spatial_out.*` — ISAC stream (bed incl. heights + dynamic objects), SPSC ring with per-block object
+  metadata, render thread, object activation/reuse/release, fold-into-bed fallback, reopen on device loss.
 - `core/scan.*` — unique pattern search in the exe's `.text`, RIP-relative decoding.
 - `core/config.*`, `core/log.*` — `SDAtmos.ini` / `SDAtmos.log`.
 - `tests/load_test.cc` (automated: loads into a Wwise-less process), `tests/config_save_test.cc` (automated:
-  `config::Save` keeps UTF-8 comments/other keys, adds missing ones), `tests/spatial_orbit_manual.cc`
-  (standalone ISAC check: `--probe` prints limits, otherwise plays a circling object).
+  `config::Save` keeps UTF-8 comments/other keys, adds missing ones), `tests/heights_test.cc` (automated:
+  height DSP maps, carve energy, decorrelator), `tests/spatial_orbit_manual.cc` (standalone ISAC check:
+  `--probe` prints limits, otherwise plays a circling object).
 - `.github/workflows/build.yml` — CI on GitHub Actions (`windows-2025-vs2026`): recreates the workspace
   layout from pinned commits (ReShade v6.8.0 + `deps/imgui`, SPatch for MinHook), builds Release x64 with
   `-warnAsError`, runs `tests\*_test.cc`, uploads `.asi` + `.pdb`. Bump the pins when `reference\` moves;
@@ -102,6 +112,20 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   out every object). The log lists each bus's active effects when first seen/changed.
 - **Objects never get dropped**: if Windows refuses a dynamic object, the render thread pans that slot into the
   bed (constant power between adjacent bed speakers).
+- **Height bed is fed per bus, at the bus→parent transfer** (`CAkLEngine::TransferBuffer` → the parent's
+  `ConsumeBuffer(AkAudioBufferBus&)` or `CAkVPLFinalMixNode::ConsumeBuffer`; source AkVPL = buffer − 0x420):
+  the only place a reverb *return* (post-effect) is a separate signal, and one hook sees every active bus once
+  per frame with the gain left to the output (`parent.m_fDownstreamGain`, or the final mix's `m_fNextVolume`
+  +0x444 for top-level buses). Tiers by the bus's **own** ID (sky: weather 317282339 + birds 352130103 at
+  -3 dB; ambience: ambient 77978275 at -6 dB) or its own reverb FX (-6 dB); never by ancestry, so each signal
+  is carved once per tier (weather → then again as ambience ≈ 63 % overhead). Floor scaled in place by
+  sqrt(1 − s²Σw²) (energy-preserving; C/LFE untouched). Map: TFL←FL, TFR←FR, TBL←0.707(SL+BL), TBR likewise;
+  stereo buses spread front over both. Research-backed decorrelation (Dolby: beds are for diffuse content,
+  PLIIz: rain/wind up; Lee: identical copies must be 7.5-9.5 dB down or the image lifts, nothing < 250 Hz
+  localizes overhead; DTS upmix patent: 5-20 ms Haas delay + nested all-passes + LF shelf; Atmos guides:
+  front/back heights must differ): 8/12 ms pre-delay, 3 Schroeder all-passes per pair (different sets
+  front/back, same L/R), 200 Hz Butterworth HP, run once on the summed accumulators (linear). Height channels
+  only when the native static mask has all four; F7 crossfades the carve over one buffer.
 - **Actor entities are lifted towards head height** in `AK::SoundEngine::SetPosition` (`ActorLift`): the
   entity is recognized by `SimComponent::m_TypeUID` (+0x18 of the component, entity − 0x40) ==
   `ActorAudioComponent::_TypeUID` 0xD2000003. Done at the game→Wwise boundary rather than in the router so
@@ -150,6 +174,15 @@ full spread (gains 0.41-0.45 on 5-6 speakers).
 **Legacy PDB has all Wwise internals** (`reference\SDmodding\game-itself`, IDA MCP). The installed exe is a
 near-identical build (same size, `.text` +80 bytes): Wwise functions are found in it by the legacy bytes with
 small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `RunVPL`/`ConsumeBuffer` +0x50).
+
+**Bus hierarchy** (`Init.bnk` inside `SFX.pck`, parsed 2026-09-23, tree in `docs\game-audio.md`): 279 buses,
+28 aux buses (each with a ConvolutionReverb/MatrixReverb shareset), names = FNV-1 32-bit of the lowercase
+name (59 of 307 recovered by dictionary: ambient 77978275 ⊃ weather 317282339 {thunder, wind, rain}, birds
+352130103, city 3888786832, traffic, crowd_*, water_amb, boat_amb, interior_rain; master_sfx 3462011115,
+master_hdr, master_aux, master_dialog, master_music 1900298039 (the EQ bus), sfx 393239870 {footsteps,
+gunshot, fight_*, collisions...}). AKPK v1 bank entries are 24 bytes (id, block, size, pad, offset, lang);
+the Python used is in the session scratchpad, not the repo. The user has `reference\wwiseutil-SDDE` (Go)
+for the same job once Go is installed.
 
 ## How Wwise 2012 renders (legacy addresses)
 
@@ -221,10 +254,12 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
    e.g. a master limiter or slow-motion filters on buses), audible jumps on promotion/demotion, activation
    failures, whether 20 objects are enough in fights.
 5. Player attribution, churn and bus EQ: **verified in-game** (2026-09-23).
-6. Next: verify the actor lift in-game, radar check, offline tests for the router (fake PBI/cbx). Possible experiment: flip the game's own `m_positionListenerAtCamera` to
-   hear the listener-at-player hybrid.
-7. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
-   gunshots/vehicles by sound ID), maybe a ReShade overlay showing objects.
+6. Height bed — built 2026-09-23, **awaiting the in-game check** (see status). Tuning knobs if it sounds
+   wrong: shares (menu sliders), pre-delay/high-pass (ini), the bus lists.
+7. Next: verify the actor lift in-game, radar check, offline tests for the router (fake PBI/cbx). Possible
+   experiment: flip the game's own `m_positionListenerAtCamera` to hear the listener-at-player hybrid.
+8. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
+   gunshots/vehicles by sound ID), per-voice elevation for spread bed voices (phi > 0 → heights).
 
 Why not hook `PostEvent`/`SetPosition` as first planned: those give IDs and positions but no audio samples.
 The PCM only exists inside the Wwise pipeline, and Wwise already has the listener-relative direction there.

@@ -29,7 +29,11 @@ bed channel → `Start`.
 
 Bed channel mapping (`BuildChannelMap`): SPEAKER_* bits of Wwise's interleaved layout → `AudioObjectType`.
 A 5.1 mix puts its surrounds on the BACK bits, which the Atmos bed calls Side; with true side channels
-present, back stays back. Non-native static types are allowed (Windows folds them) but logged.
+present, back stays back. Non-native static types are allowed (Windows folds them) but logged. The four
+height channels (`TopFrontLeft/Right`, `TopBackLeft/Right`) are added after the floor channels only when
+the format's native static mask has all four (a folded-down height would just be a delayed copy of the
+floor); they are fed by `core/heights.cc` (see height-bed.md) and `HeightsActive()` tells the audio
+thread whether to bother.
 
 Render thread (`Run`), one pass per event (10 ms):
 
@@ -37,7 +41,7 @@ Render thread (`Run`), one pass per event (10 ms):
 2. Bed: copy `frameCount` frames from the ring into each static object's buffer once the ring has been
    primed with 2048 frames; if the ring runs dry, output silence, count an underrun and wait for a full
    prime again rather than stutter on every trickle.
-3. Dynamic objects: the ring stores, per frame, the bed channels followed by 32 object samples, and a
+3. Dynamic objects: the ring stores, per frame, the floor channels, 4 height samples and 32 object samples, and a
    separate small ring of **block metadata** (one entry per Wwise buffer: start frame, length, active mask,
    32 positions). A pass covers at most two blocks (480 < 1024). For each slot in the active mask: activate a
    Windows object if the slot has none (`ActivateSpatialAudioObject(AudioObjectType_Dynamic)`), copy the

@@ -10,6 +10,7 @@
 
 #include "config.hh"
 #include "game.hh"
+#include "heights.hh"
 #include "log.hh"
 #include "objects.hh"
 #include "scan.hh"
@@ -26,6 +27,14 @@ namespace wwise
 	constexpr char kSigRunVPL[] = "40 53 55 56 57 41 54 41 56 41 57 48 81 EC 20 02 00 00";   // CAkLEngine::RunVPL
 	constexpr char kSigConsumeBuffer[] =                                                     // CAkVPLMixBusNode::ConsumeBuffer(AkVPLState&, AkAudioMix*)
 		"48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 66 83 7A ? ? 49 8B F0 48 8B FA 48 8B D9 76";
+
+	// The bus→bus and bus→final-mix variants of ConsumeBuffer (called from CAkLEngine::TransferBuffer once per
+	// active bus per frame, after the bus's effects ran): identical prologues, so the signatures run into the
+	// first field access that differs (m_bEffectCreated at +0x540 vs the final node's m_eState at +0x530).
+	constexpr char kSigBusConsume[] =                                                        // CAkVPLMixBusNode::ConsumeBuffer(AkAudioBufferBus&, bool, AkAudioMix*)
+		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 30 66 83 7A 12 00 49 8B F1 41 0F B6 E8 48 8B FA 48 8B D9 76 5A 80 B9 40 05 00 00 00";
+	constexpr char kSigFinalConsume[] =                                                      // CAkVPLFinalMixNode::ConsumeBuffer(AkAudioBufferBus*, bool, AkAudioMix*)
+		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 30 66 83 7A 12 00 49 8B F1 41 0F B6 E8 48 8B FA 48 8B D9 76 41 83 B9 30 05 00 00 02";
 
 	// AK::SoundEngine::SetPosition(AkGameObjectID, const AkSoundPosition&): null check, then an AkQueuedMsg of
 	// type 0xD (68-byte frame).
@@ -45,6 +54,8 @@ namespace wwise
 	using RunVPLFn = void(__fastcall*)(AkRunningVPL* vpl);
 	using ConsumeBufferFn = void(__fastcall*)(void* mixBus, AkVPLState* state, AkAudioMix* mix);
 	using SetPositionFn = AKRESULT(__fastcall*)(uint64_t gameObj, const AkSoundPosition* position);
+	using BusConsumeFn = void(__fastcall*)(void* parentBus, AkAudioBufferBus* buffer, bool pan, AkAudioMix* mix);
+	using FinalConsumeFn = AKRESULT(__fastcall*)(void* finalMix, AkAudioBufferBus* buffer, bool pan, AkAudioMix* mix);
 
 	static SinkInitFn gSinkInit = nullptr;
 	static SinkPassFn gPassData = nullptr;
@@ -52,6 +63,8 @@ namespace wwise
 	static RunVPLFn gRunVPL = nullptr;
 	static ConsumeBufferFn gConsumeBuffer = nullptr;
 	static SetPositionFn gSetPosition = nullptr;
+	static BusConsumeFn gBusConsume = nullptr;
+	static FinalConsumeFn gFinalConsume = nullptr;
 
 	static const uint32_t* gSampleRate = nullptr;
 	static const uint8_t* gDevices = nullptr; // CAkOutputMgr::m_Devices: AkDevice* pItems, uint32 length
@@ -262,13 +275,31 @@ namespace wwise
 		gConsumeBuffer(mixBus, state, mix);
 	}
 
-	// End of a rendered buffer on the main sink: hand bed + objects to the spatial stream.
+	// A bus hands its processed output to its parent (or to the device's final mix). The buffer is the source
+	// bus's own m_BufferOut, which is how the source AkVPL is recovered; the height bed takes its share here.
+	static void __fastcall BusConsumeHook(void* parentBus, AkAudioBufferBus* buffer, bool pan, AkAudioMix* mix)
+	{
+		const void* source = reinterpret_cast<const uint8_t*>(buffer) - vpl::kBufferOut;
+		heights::OnBusTransfer(source, buffer, At<float>(parentBus, vpl::kDownstreamGain));
+		gBusConsume(parentBus, buffer, pan, mix);
+	}
+
+	static AKRESULT __fastcall FinalConsumeHook(void* finalMix, AkAudioBufferBus* buffer, bool pan, AkAudioMix* mix)
+	{
+		const void* source = reinterpret_cast<const uint8_t*>(buffer) - vpl::kBufferOut;
+		// A top-level bus's remaining chain is the final mix node's own volume (what AnalyzeMixingGraph uses too).
+		heights::OnBusTransfer(source, buffer, At<float>(finalMix, vpl::kNextVolume));
+		return gFinalConsume(finalMix, buffer, pan, mix);
+	}
+
+	// End of a rendered buffer on the main sink: hand bed + heights + objects to the spatial stream.
 	static void FinishBuffer(void* self, bool silence)
 	{
 		const spatial::ObjectBlock* block = objects::FinishFrame();
+		const float* const* heightBlock = heights::FinishFrame();
 		if (spatial::IsActive()) {
 			if (silence) {
-				spatial::Push(nullptr, kFramesPerBuffer, block);
+				spatial::Push(nullptr, kFramesPerBuffer, heightBlock, block);
 			}
 			else {
 				// Take the mix before PassData hands it to XAudio2 (XAudio2 reads its ring asynchronously, so
@@ -276,12 +307,13 @@ namespace wwise
 				AkAudioBuffer& out = At<AkAudioBuffer>(self, sink::kMasterOut);
 				const uint32_t channels = At<uint32_t>(self, sink::kNumChannels);
 				if (out.pData && out.uValidFrames) {
-					spatial::Push(static_cast<const float*>(out.pData), out.uValidFrames, block);
+					spatial::Push(static_cast<const float*>(out.pData), out.uValidFrames, heightBlock, block);
 					std::memset(out.pData, 0, static_cast<size_t>(channels) * out.uValidFrames * sizeof(float));
 				}
 			}
 		}
 		objects::StartFrame();
+		heights::StartFrame();
 		telemetry::Publish(++gBufferCount, objects::Target());
 		if (gConfig.mVoiceLog) {
 			voices::OnFrameEnd(gSampleRate ? *gSampleRate : 0);
@@ -331,8 +363,10 @@ namespace wwise
 			gMainSink = self;
 			if (gBedEnabled) {
 				if (rate && static_cast<uint32_t>(std::popcount(speakers)) == channels) {
-					// Objects are reserved whenever the router can run, even if they start switched off (A/B).
-					spatial::Start(rate, speakers, gVoiceHooks);
+					// Objects and height channels are reserved whenever their hooks can feed them, even if they
+					// start switched off (A/B).
+					heights::Init(rate);
+					spatial::Start(rate, speakers, gVoiceHooks, gBusConsume != nullptr);
 				}
 				else {
 					LOG("sink: unexpected layout, not starting the spatial bed");
@@ -420,6 +454,20 @@ namespace wwise
 			uint8_t* setPosition = scan::FindUnique("AK::SoundEngine::SetPosition", kSigSetPosition);
 			const bool liftHook = Hook("SetPosition", setPosition, &SetPositionHook, gSetPosition);
 			LOG("hook: actor position hook %s, lift %.2f m", liftHook ? "ready" : "MISSING", gConfig.mActorLift.load());
+
+			// Height bed: both bus transfer variants or nothing (a bus whose parent is the final mix would
+			// otherwise never be seen).
+			uint8_t* busConsume = scan::FindUnique("CAkVPLMixBusNode::ConsumeBuffer(bus)", kSigBusConsume);
+			uint8_t* finalConsume = scan::FindUnique("CAkVPLFinalMixNode::ConsumeBuffer", kSigFinalConsume);
+			const bool heightHooks = Hook("BusConsume", busConsume, &BusConsumeHook, gBusConsume) &&
+				Hook("FinalConsume", finalConsume, &FinalConsumeHook, gFinalConsume);
+			if (!heightHooks) {
+				if (gBusConsume) MH_RemoveHook(busConsume);
+				if (gFinalConsume) MH_RemoveHook(finalConsume);
+				gBusConsume = nullptr;
+				gFinalConsume = nullptr;
+			}
+			LOG("hook: height bed hooks %s, heights %s at start", heightHooks ? "ready" : "MISSING", gConfig.mHeights.load() ? "on" : "off");
 		}
 	}
 }

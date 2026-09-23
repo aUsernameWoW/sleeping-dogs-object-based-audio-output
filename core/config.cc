@@ -57,6 +57,34 @@ namespace config
 		"; Only the direction and a little distance attenuation change.\n"
 		"ActorLift = 1.5\n"
 		"\n"
+		"[Heights]\n"
+		"; 7.1.4 声道床的四个顶部声道。游戏本身只有 7.1，这里把扩散类声音的一部分抬到头顶：天气（雨、雷、风）、鸟叫、\n"
+		"; 城市/人群等环境声，以及混响返回。抬上去的部分会做去相关处理（短延迟 + 全通 + 高通），地面声道相应减少同样的\n"
+		"; 能量。这是 Dolby 对游戏 bed 的用法建议，也是 DTS/Dolby 上混器的做法。游戏里按 F7 开关（A/B 对比）。\n"
+		"; The four top channels of a 7.1.4 bed. The game only mixes 7.1; a share of the diffuse content goes up:\n"
+		"; weather (rain, thunder, wind), birds, city/crowd ambience and reverb returns, decorrelated (short\n"
+		"; delay + all-passes + high-pass); the floor loses the same energy. F7 toggles it in-game (A/B).\n"
+		"Enabled = 1\n"
+		"\n"
+		"; 各类来源抬到顶部的比例（dB，相对该总线的输出；-60 以下 = 不抬）。\n"
+		"; Share of each kind moved up, in dB of the bus's output (-60 or below = none).\n"
+		"Sky = -3\n"
+		"Ambience = -6\n"
+		"Reverb = -6\n"
+		"\n"
+		"; 去相关参数：前方顶部声道的预延迟（毫秒，后方再加 4 ms），高通截止频率（Hz，0 = 关）。改动需重启游戏。\n"
+		"; Decorrelation: pre-delay of the front heights in ms (the back pair gets 4 ms more), high-pass in Hz\n"
+		"; (0 = off). Changes need a game restart.\n"
+		"Delay = 8\n"
+		"HighPass = 200\n"
+		"\n"
+		"; 哪些 Wwise 总线算“天空”和“环境声”（Init.bnk 里的总线 ID，逗号分隔，最多 8 个）。混响总线按其效果器自动识别。\n"
+		"; 默认：weather 317282339、birds 352130103；ambient 77978275（整个环境声子树）。\n"
+		"; Wwise bus IDs (from Init.bnk, comma-separated, up to 8) treated as sky / ambience. Reverb buses are\n"
+		"; recognized by their effects.\n"
+		"SkyBuses = 317282339, 352130103\n"
+		"AmbienceBuses = 77978275\n"
+		"\n"
 		"[Overlay]\n"
 		"; 需要 ReShade（支持插件的版本）。设置也可以在 ReShade 菜单的 SDAtmos 标签页里改。\n"
 		"; Needs ReShade with add-on support; everything here is also in the SDAtmos tab of the ReShade menu.\n"
@@ -72,10 +100,11 @@ namespace config
 		"Fov = 60\n"
 		"; 雷达边缘代表多少米。 / Meters at the radar's edge.\n"
 		"RadarRange = 60\n"
-		"; 热键（虚拟键码，十六进制）。0x78 = F9, 0x77 = F8。\n"
+		"; 热键（虚拟键码，十六进制）。0x78 = F9, 0x77 = F8, 0x76 = F7。\n"
 		"; Hotkeys (virtual-key codes).\n"
 		"ToggleObjectsKey = 0x78\n"
 		"ToggleHudKey = 0x77\n"
+		"ToggleHeightsKey = 0x76\n"
 		"\n"
 		"[Debug]\n"
 		"; 在 .asi 旁边写 SDAtmos.log。\n"
@@ -115,6 +144,32 @@ namespace config
 		return end != text.c_str() ? static_cast<int>(value) : fallback;
 	}
 
+	// "1, 2,3" → up to `max` unsigned IDs; anything unparsable ends the list. Returns the count.
+	static int ReadIdList(const wchar_t* section, const wchar_t* key, uint32_t* out, int max, int fallbackCount)
+	{
+		// An absent key keeps the defaults; an empty value means an empty list.
+		wchar_t text[256] = {};
+		GetPrivateProfileStringW(section, key, L"\x01", text, ARRAYSIZE(text), gPath.c_str());
+		if (text[0] == L'\x01') {
+			return fallbackCount;
+		}
+		const wchar_t* p = text;
+		int count = 0;
+		while (count < max) {
+			while (*p == L' ' || *p == L',' || *p == L'\t') {
+				++p;
+			}
+			wchar_t* end = nullptr;
+			const unsigned long value = std::wcstoul(p, &end, 0);
+			if (end == p) {
+				break;
+			}
+			out[count++] = static_cast<uint32_t>(value);
+			p = end;
+		}
+		return count;
+	}
+
 	void Load(const std::wstring& dir)
 	{
 		gPath = dir + L"\\SDAtmos.ini";
@@ -136,6 +191,14 @@ namespace config
 		gConfig.mPlayerInBed = ReadBool(L"Objects", L"PlayerInBed", gConfig.mPlayerInBed);
 		gConfig.mBusFx = ReadInt(L"Objects", L"BusFx", gConfig.mBusFx);
 		gConfig.mActorLift = ReadFloat(L"Objects", L"ActorLift", gConfig.mActorLift);
+		gConfig.mHeights = ReadBool(L"Heights", L"Enabled", gConfig.mHeights);
+		gConfig.mHeightSky = ReadFloat(L"Heights", L"Sky", gConfig.mHeightSky);
+		gConfig.mHeightAmbience = ReadFloat(L"Heights", L"Ambience", gConfig.mHeightAmbience);
+		gConfig.mHeightReverb = ReadFloat(L"Heights", L"Reverb", gConfig.mHeightReverb);
+		gConfig.mHeightDelay = ReadFloat(L"Heights", L"Delay", gConfig.mHeightDelay);
+		gConfig.mHeightHighPass = ReadFloat(L"Heights", L"HighPass", gConfig.mHeightHighPass);
+		gConfig.mSkyBusCount = ReadIdList(L"Heights", L"SkyBuses", gConfig.mSkyBuses, Config::kMaxBusIds, gConfig.mSkyBusCount);
+		gConfig.mAmbienceBusCount = ReadIdList(L"Heights", L"AmbienceBuses", gConfig.mAmbienceBuses, Config::kMaxBusIds, gConfig.mAmbienceBusCount);
 		gConfig.mHud =ReadBool(L"Overlay", L"Hud", gConfig.mHud);
 		gConfig.mHudRadar = ReadBool(L"Overlay", L"Radar", gConfig.mHudRadar);
 		gConfig.mHudMarkers = ReadBool(L"Overlay", L"Markers", gConfig.mHudMarkers);
@@ -145,6 +208,7 @@ namespace config
 		gConfig.mHudRadarRange = ReadFloat(L"Overlay", L"RadarRange", gConfig.mHudRadarRange);
 		gConfig.mToggleObjectsKey = ReadInt(L"Overlay", L"ToggleObjectsKey", gConfig.mToggleObjectsKey);
 		gConfig.mToggleHudKey = ReadInt(L"Overlay", L"ToggleHudKey", gConfig.mToggleHudKey);
+		gConfig.mToggleHeightsKey = ReadInt(L"Overlay", L"ToggleHeightsKey", gConfig.mToggleHeightsKey);
 		gConfig.mLogging = ReadBool(L"Debug", L"Logging", gConfig.mLogging);
 		gConfig.mVoiceLog = ReadBool(L"Debug", L"VoiceLog", gConfig.mVoiceLog);
 
@@ -159,6 +223,18 @@ namespace config
 		}
 		if (!(gConfig.mObjectDistance > 0.1f && gConfig.mObjectDistance < 100.0f)) {
 			gConfig.mObjectDistance = 2.0f;
+		}
+		for (std::atomic<float>* share : { &gConfig.mHeightSky, &gConfig.mHeightAmbience, &gConfig.mHeightReverb }) {
+			// A share above 0 dB would leave the floor with nothing (sqrt of a negative energy).
+			if (!(share->load() <= 0.0f)) {
+				*share = 0.0f;
+			}
+		}
+		if (!(gConfig.mHeightDelay >= 0.0f && gConfig.mHeightDelay <= 30.0f)) {
+			gConfig.mHeightDelay = 8.0f;
+		}
+		if (!(gConfig.mHeightHighPass >= 0.0f && gConfig.mHeightHighPass <= 2000.0f)) {
+			gConfig.mHeightHighPass = 200.0f;
 		}
 		if (!(gConfig.mHudFov >= 20.0f && gConfig.mHudFov <= 120.0f)) {
 			gConfig.mHudFov = 60.0f;
@@ -246,6 +322,10 @@ namespace config
 		SetValue(text, "Objects", "PlayerInBed", gConfig.mPlayerInBed ? "1" : "0");
 		SetValue(text, "Objects", "BusFx", std::to_string(gConfig.mBusFx.load()));
 		SetValue(text, "Objects", "ActorLift", FormatFloat(gConfig.mActorLift));
+		SetValue(text, "Heights", "Enabled", gConfig.mHeights ? "1" : "0");
+		SetValue(text, "Heights", "Sky", FormatFloat(gConfig.mHeightSky));
+		SetValue(text, "Heights", "Ambience", FormatFloat(gConfig.mHeightAmbience));
+		SetValue(text, "Heights", "Reverb", FormatFloat(gConfig.mHeightReverb));
 		SetValue(text, "Overlay", "Hud", gConfig.mHud ? "1" : "0");
 		SetValue(text, "Overlay", "Radar", gConfig.mHudRadar ? "1" : "0");
 		SetValue(text, "Overlay", "Markers", gConfig.mHudMarkers ? "1" : "0");

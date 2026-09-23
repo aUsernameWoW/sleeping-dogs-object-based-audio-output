@@ -100,6 +100,7 @@
   <ItemGroup>
     <ClCompile Include="dllmain.cc" />
     <ClCompile Include="core\config.cc" />
+    <ClCompile Include="core\heights.cc" />
     <ClCompile Include="core\log.cc" />
     <ClCompile Include="core\objects.cc" />
     <ClCompile Include="core\overlay.cc" />
@@ -111,6 +112,8 @@
   <ItemGroup>
     <ClInclude Include="core\config.hh" />
     <ClInclude Include="core\game.hh" />
+    <ClInclude Include="core\height_dsp.hh" />
+    <ClInclude Include="core\heights.hh" />
     <ClInclude Include="core\log.hh" />
     <ClInclude Include="core\objects.hh" />
     <ClInclude Include="core\overlay.hh" />

@@ -85,6 +85,16 @@ namespace wwise
 	};
 	static_assert(sizeof(AkRayVolumeData) == 36);
 
+	// A bus's output buffer (CAkBusVolumes::m_BufferOut): planar channels in Wwise pipeline order (FL FR C BL BR
+	// SL SR, LFE last), plus the bus volume ramp CAkMixer::Mix applies while mixing it into the parent.
+	struct AkAudioBufferBus
+	{
+		AkAudioBuffer buffer;
+		float fNextVolume;
+		float fPreviousVolume;
+	};
+	static_assert(sizeof(AkAudioBufferBus) == 0x20);
+
 	// AkVPL: a mix bus instance. Starts with its CAkVPLMixBusNode (CAkBusFX : CAkBusVolumes), so the node
 	// pointer passed to CAkVPLMixBusNode::ConsumeBuffer is also the AkVPL pointer. The device's master bus is
 	// a CAkVPLFinalMixNode, which is a CAkBusFX too (same FX offsets) but not an AkVPL.
@@ -92,6 +102,8 @@ namespace wwise
 	{
 		constexpr size_t kBusID = 0x408;          // uint32 (CAkBusVolumes)
 		constexpr size_t kParent = 0x410;         // AkVPL*: the bus this one mixes into, null = the device's final mix
+		constexpr size_t kBufferOut = 0x420;      // AkAudioBufferBus: the bus's output, handed to the parent's ConsumeBuffer
+		constexpr size_t kNextVolume = 0x444;     // float: the bus's own volume (linear); the final mix node's is applied at output
 		constexpr size_t kFx = 0x480;             // CAkBusFX::FX[4] insert effects
 		constexpr size_t kBypassAllFx = 0x520;    // bit 0
 		constexpr size_t kDownstreamGain = 0x550; // float
@@ -120,6 +132,10 @@ namespace wwise
 	constexpr uint32_t PluginIndex(uint32_t id) { return id >> 16; }
 	constexpr uint32_t kMeterFx = 3 | (0x81u << 16);        // Wwise Meter: measures, doesn't change the audio
 	constexpr uint32_t kParametricEqFx = 3 | (0x69u << 16); // Wwise Parametric EQ: objects apply it themselves
+	constexpr uint32_t kMatrixReverbFx = 3 | (0x73u << 16);
+	constexpr uint32_t kRoomVerbFx = 3 | (0x76u << 16);
+	constexpr uint32_t kConvolutionReverbFx = 3 | (0x7Fu << 16);
+	constexpr bool IsReverbFx(uint32_t id) { return id == kMatrixReverbFx || id == kRoomVerbFx || id == kConvolutionReverbFx; }
 
 	// CAkParametricEQFX, the instance behind a Parametric EQ slot. Execute() runs each enabled band as a biquad
 	// y = c0 x + c1 x1 + c2 x2 + c3 y1 + c4 y2 (c3/c4 already negated and normalized), recomputing a band's

@@ -15,9 +15,11 @@ Suggested reading order:
    bed/object model, the ring and clocking, fallback paths.
 5. [voice-router.md](voice-router.md) — which voices become objects and why, player attribution, bus effects
    and EQ reproduction, crossfades, ranking.
-6. [reverse-engineering.md](reverse-engineering.md) — the workflow: legacy PDB + IDA, pattern scanning in the
+6. [height-bed.md](height-bed.md) — the 7.1.4 height channels: what the industry puts overhead, which buses
+   feed them here, the energy-preserving carve and the decorrelator.
+7. [reverse-engineering.md](reverse-engineering.md) — the workflow: legacy PDB + IDA, pattern scanning in the
    installed build, verifying offsets, the SDmodding SDK, pitfalls.
-7. [testing-and-logs.md](testing-and-logs.md) — build/test/deploy, in-game test procedure, how to read
+8. [testing-and-logs.md](testing-and-logs.md) — build/test/deploy, in-game test procedure, how to read
    `SDAtmos.log` and the HUD, baseline numbers, troubleshooting.
 
 Conventions used throughout:

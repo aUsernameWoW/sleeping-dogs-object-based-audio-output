@@ -11,9 +11,11 @@ makes the device switch to "Dolby Atmos" and render height and precise positions
 SDAtmos is an `.asi` plugin (loaded by Ultimate ASI Loader from `plugins\`) that
 
 1. takes Wwise's final 7.1 mix before XAudio2 sees it and plays it through ISAC as a **static bed**
-   (7 speaker objects + LFE), and
+   (7 speaker objects + LFE, plus the four **height channels** of a 7.1.4 bed when the format has them),
 2. takes selected 3D voices out of that mix, before they are panned into speakers, and plays them as
-   **dynamic objects** with their listener-relative direction.
+   **dynamic objects** with their listener-relative direction, and
+3. derives the height channels from the diffuse part of the mix (ambience, weather, reverb returns),
+   taken where those buses hand their output to their parent bus (see [height-bed.md](height-bed.md)).
 
 Nothing is Dolby-specific: object counts, the native bed layout and the object format are queried at runtime,
 so DTS:X for Home Theater or Windows Sonic should work the same way (untested; the user has Atmos).
@@ -28,14 +30,22 @@ so DTS:X for Home Theater or Windows Sonic should work the same way (untested; t
      • decides bed / object         │    • copies the voice's pre-pan PCM × gain ramp into an object slot
      • scales `mix` for the bed     │    • runs the bus chain's Parametric EQ on it
      • telemetry for the HUD        ┘
- ... all voices, all buses ...
+ ... all voices ...
+ CAkLEngine::TransferBuffer(bus)     ┐
+   parent->ConsumeBuffer(bufferOut) ─┼─ hook: height bed (heights.cc), once per active bus
+   FinalMixNode::ConsumeBuffer(...)  │    • sky / ambience / reverb buses: a share of the floor channels
+                                     │      goes into the height accumulators, the floor keeps the rest
+ ... all buses ...                   ┘
  CAkSinkXAudio2::PassData(sink) ──── hook: FinishBuffer
-     • objects::FinishFrame → block   • copies m_MasterOut (7.1 interleaved) + object samples + positions
-       of objects for this buffer       into the SPSC ring (spatial::Push)
-     • zeroes m_MasterOut so XAudio2  • telemetry::Publish
+     • objects::FinishFrame → block   • copies m_MasterOut (7.1 interleaved) + 4 decorrelated height
+       of objects for this buffer       channels + object samples + positions into the SPSC ring
+     • heights::FinishFrame →           (spatial::Push)
+       decorrelated TFL TFR TBL TBR   • telemetry::Publish
+     • zeroes m_MasterOut so XAudio2
        plays silence
  XAudio2 keeps consuming (silent) ────────────── same endpoint clock ──────────────► ISAC event every 10 ms
                                                                                      • bed objects ← ring
+                                                                                       (floor + heights)
                                                                                      • dynamic objects ← ring
                                                                                        (activate / reuse / release)
                                                                                      • fold into bed if Windows
@@ -45,7 +55,7 @@ so DTS:X for Home Theater or Windows Sonic should work the same way (untested; t
 Other threads:
 
 - **Hotkey thread** (`overlay.cc`): polls `GetAsyncKeyState` every 25 ms while the game is in the foreground.
-  F9 toggles dynamic objects (A/B against the plain bed), F8 the HUD. Polled on our own thread because the
+  F9 toggles dynamic objects (A/B against the plain bed), F7 the height bed, F8 the HUD. Polled on our own thread because the
   game reads keyboard through Raw Input and the hotkeys must work without ReShade.
 - **ReShade render thread** (`overlay.cc`): if ReShade 6.8.0 with add-on support is present, SDAtmos
   registers as an add-on and draws a menu tab (settings, stream status, voice table, save to ini) and a HUD
@@ -60,14 +70,15 @@ Other threads:
 | `dllmain.cc` | Loads `SDAtmos.ini`, opens the log, installs the Wwise hooks and the overlay from `DllMain`. Runs before the game's `main` (the ASI loader is reached through `dinput8.dll`, a static import), so the sink hook is in place before Wwise initializes. |
 | `core/wwise.hh` | Wwise 2012.2 struct layouts and offsets (from the legacy PDB). |
 | `core/game.hh` | Game-side (UFG) layouts: `AudioEntity`, `ActorAudioComponent`, `OneShot`, the player's name hash, `qSymbol` CRC. |
-| `core/wwise_hooks.*` | Byte signatures, MinHook hooks (`CAkSinkXAudio2::Init/PassData/PassSilence`, `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`, `AK::SoundEngine::SetPosition` for the actor lift), voice snapshot logging, `CAkOutputMgr::m_Devices` lookup, plugin names. |
+| `core/wwise_hooks.*` | Byte signatures, MinHook hooks (`CAkSinkXAudio2::Init/PassData/PassSilence`, `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer` (voice and bus variants), `CAkVPLFinalMixNode::ConsumeBuffer`, `AK::SoundEngine::SetPosition` for the actor lift), voice snapshot logging, `CAkOutputMgr::m_Devices` lookup, plugin names. |
 | `core/objects.*` | The voice router: candidate rules, slot assignment, ranking, crossfades, player attribution, bus effect check, Parametric EQ reproduction. |
-| `core/spatial_out.*` | The ISAC stream: bed + dynamic objects, SPSC ring with per-block object metadata, render thread, activation/reuse/release, fold-into-bed, reopen on device loss. |
+| `core/heights.*`, `core/height_dsp.hh` | The height bed: which buses feed the four top channels and how much (sky / ambience / reverb tiers), the energy-preserving carve, the decorrelator (pre-delay, all-passes, high-pass). `height_dsp.hh` has no engine dependencies so `heights_test` can include it. |
+| `core/spatial_out.*` | The ISAC stream: bed (floor + heights) + dynamic objects, SPSC ring with per-block object metadata, render thread, activation/reuse/release, fold-into-bed, reopen on device loss. |
 | `core/telemetry.*` | Per-buffer voice snapshot handed from the audio thread to the render thread (try-lock; the audio thread never waits). |
 | `core/overlay.*` | Hotkeys, ReShade add-on (menu + HUD). |
 | `core/scan.*` | Unique IDA-style pattern search in the exe's `.text`, RIP-relative operand decoding. |
 | `core/config.*`, `core/log.*` | `SDAtmos.ini` (written with bilingual comments if missing, saved byte-wise so the UTF-8 comments survive) and `SDAtmos.log`. |
-| `tests/` | `load_test.cc` (loads the .asi into a Wwise-less process), `config_save_test.cc`, `spatial_orbit_manual.cc` (standalone ISAC check). |
+| `tests/` | `load_test.cc` (loads the .asi into a Wwise-less process), `config_save_test.cc`, `heights_test.cc` (height bed DSP offline), `spatial_orbit_manual.cc` (standalone ISAC check). |
 
 ## Design decisions and their reasons
 
@@ -124,6 +135,14 @@ so Wwise's own rays come out at head height and the router needs no listener mat
 apart from a slightly larger distance. The game's occlusion, distance RTPC and region logic use its own copy
 of the position and are unaffected.
 
+**The height bed is fed at the bus level, not per voice.** Reverb returns only exist as a signal after the
+aux bus ran its effect, i.e. when the bus hands its output to its parent (`CAkLEngine::TransferBuffer`);
+ambience is a whole subtree of buses whose output passes through one bus (`ambient`). Hooking the two
+bus-consume functions sees every active bus once per frame with the post-effect signal and the gain that
+remains to the output, without touching the voice pipeline. Classification is by the bus's own ID (or its
+own reverb effect), never by ancestry, so each signal is carved exactly once per tier. The decorrelation
+runs once on the summed height channels (it is linear). See [height-bed.md](height-bed.md).
+
 Router-specific decisions (player attribution, decay handling, bus effects) are in
 [voice-router.md](voice-router.md).
 
@@ -141,6 +160,10 @@ overwritten by deploys):
 | `Objects.PlayerInBed` | 1 | The player's own sounds stay in the bed. |
 | `Objects.BusFx` | 1 | Effects other than Parametric EQ on the bus chain: 0 ignore, 1 voice stays in the bed (master excepted), 2 master included. |
 | `Objects.ActorLift` | 1.5 | Meters added to characters' audio entity positions (their root is at the feet) before Wwise sees them; 0 = off. |
-| `Overlay.*` | | HUD on/off (F8), radar, markers, labels, bed voices, marker FOV, radar range, hotkey codes. |
+| `Heights.Enabled` | 1 | Feed the four top bed channels (F7). Needs a format whose native bed has them. |
+| `Heights.Sky` / `Ambience` / `Reverb` | -3 / -6 / -6 | dB share of each tier's bus output moved overhead (the floor keeps the rest, energy-preserving). ≤ -60 = none. |
+| `Heights.Delay` / `HighPass` | 8 / 200 | Decorrelation: pre-delay in ms (back pair +4), high-pass in Hz. Static. |
+| `Heights.SkyBuses` / `AmbienceBuses` | weather, birds / ambient | Wwise bus IDs (Init.bnk) per tier, comma-separated. |
+| `Overlay.*` | | HUD on/off (F8), radar, markers, labels, bed voices, marker FOV, radar range, hotkey codes (F9 objects, F7 heights, F8 HUD). |
 | `Debug.Logging` | 1 | Write `SDAtmos.log`. |
 | `Debug.VoiceLog` | 1 | Periodic 3D voice snapshots in the log. |

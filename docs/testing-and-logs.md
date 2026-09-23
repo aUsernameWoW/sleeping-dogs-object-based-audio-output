@@ -18,6 +18,8 @@ next to a private copy so their ini/log land in `build\tests\<name>\`.
 - `load_test`: loads the .asi into a process without Wwise. Must not crash, must write a default ini, must
   log the missing sink functions and leave audio alone.
 - `config_save_test`: `config::Save` keeps UTF-8 comments and unrelated keys, adds missing keys.
+- `heights_test`: the height bed's DSP (`core/height_dsp.hh`) offline: floor→height maps for 7.1/5.1/stereo,
+  the energy-preserving carve, the decorrelator's delay, all-pass flatness and high-pass, front ≠ back.
 - `spatial_orbit_manual`: compiled, not run; see spatial-output.md.
 
 The router has no offline tests yet; its inputs are plain memory with known offsets, so fake `CAkPBI`/cbx
@@ -43,7 +45,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
    on-screen markers at each voice's projected direction, a status line (objects on/off, N/limit, voice
    counts, latency). Colors: cyan = object (label = slot number), yellow = qualifies but waiting, gray =
    spread/quiet (bed), purple = not mono / multi-position, green = player (bed), orange = bus effects (bed).
-4. **F9** toggles objects (A/B). A banner confirms it even with the HUD off.
+4. **F9** toggles objects (A/B), **F7** the height bed. A banner confirms it even with the HUD off.
 5. ReShade menu → SDAtmos tab: stream status, live sliders/checkboxes, the voice table (role, azimuth,
    elevation, distance, level, sound ID, slot), "Save to SDAtmos.ini".
 6. Walk, sprint (L-Shift), vault over things, start a fight, drive: the player's sounds should be green
@@ -75,7 +77,11 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
   folded into bed, peak dBFS` — `failed`/`folded` > 0 means Windows ran out of objects (another app?).
 - `spatial: stream stopped (0x...)`, then `stream started` again when it reopened (device change, spatial
   format toggled).
-- `hotkey: dynamic objects ON/OFF`, `hotkey: HUD on/off`, `menu: settings saved`.
+- `heights: bus <id> (<name>, mask 0x..., parent <ptr>) carves as sky|ambience|reverb at <dB>` once per
+  bus ID; `heights: on|off; bus transfers carved: S sky, A ambience, R reverb; peak dBFS TFL TFR TBL TBR:
+  ...` every 10 s. `spatial: stream started ... bed [... TFL TFR TBL TBR] (12 ch)` says the stream has the
+  height channels. See height-bed.md.
+- `hotkey: dynamic objects ON/OFF`, `hotkey: height bed ON/OFF`, `hotkey: HUD on/off`, `menu: settings saved`.
 
 ## Baselines (user's system, 2026-09-23)
 

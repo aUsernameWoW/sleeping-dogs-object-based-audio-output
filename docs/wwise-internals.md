@@ -88,6 +88,31 @@ are already folded into the `AkAudioMix` gains; `r`/`theta`/`phi` are the raw ge
 - HDR: `AkVPL` flag bit 1; `AkHdrBus::ComputeHdrAttenuation` adjusts voice volumes, which end up in the mix
   gains, so objects inherit it.
 
+### Bus → parent transfer (where the height bed taps in)
+
+After every voice ran, `CAkLEngine::GetBuffer` (0x140a51d60) walks `m_arrayVPLs` from the last to the
+first (children before parents) and for each bus calls `CAkLEngine::TransferBuffer(AkVPL*)` (0x140a53900),
+then `CAkVPLMixBusNode::ReleaseBuffer`; then `AkDevice::PushData` for each device (final mix → sink).
+`TransferBuffer`:
+
+1. `CAkVPLMixBusNode::GetResultingBuffer(AkAudioBufferBus*&)` (0x140a7e470): runs `ProcessAllFX`, copies
+   the bus's `m_fPreviousVolume`/`m_fNextVolume` into its `m_BufferOut` (`CAkBusVolumes` **`+0x420`**, an
+   `AkAudioBufferBus` = `AkAudioBuffer` + `fNextVolume` + `fPreviousVolume`), returns `&m_BufferOut`.
+2. `CAkBusVolumes::UpdateFinalVolumes`: `m_FinalVolumes[ch] = m_PanningVolumes[ch] × volume` (only used
+   when the bus is positioned).
+3. `m_pParent ? CAkVPLMixBusNode::ConsumeBuffer(parent, buffer, IsPanning(), m_FinalVolumes)`
+   (0x140a7e240) `: CAkVPLFinalMixNode::ConsumeBuffer(device.pFinalMix, ...)` (0x140a7f290). Both zero-pad
+   and call `CAkMixer::Mix` (0x140a7e7f0): with equal channel masks and no panning it is a per-channel
+   `MixChannelSIMD` with the volume ramp `fPreviousVolume → fNextVolume` over the buffer; otherwise
+   `Mix3D` with the `AkAudioMix` matrix. `IsPanning` = `CAkBus` +0x53 bit 2 (`m_bPositioningEnabled`).
+
+So at the hook the buffer is the bus's post-effect output before its own volume; the remaining gain to the
+device is `parent->m_fDownstreamGain` (the parent's own volume × its chain, per `AnalyzeMixingGraph`), or
+the final mix node's `m_fNextVolume` (**`+0x444`** of `CAkBusVolumes`) for a top-level bus. The bus
+buffer's channel mask is a Wwise `AK_SPEAKER_*` mask (same bits as `SPEAKER_*`), planar in pipeline order
+(FL FR C BL BR SL SR, LFE last). The two `ConsumeBuffer` variants share their first 39 bytes; the
+signatures include the first field access that differs (`m_bEffectCreated` +0x540 vs `m_eState` +0x530).
+
 ### Effects
 
 Plugin IDs are `AKMAKECLASSID(type, company, index) = type | company << 4 | index << 16` (type 3 = effect,
