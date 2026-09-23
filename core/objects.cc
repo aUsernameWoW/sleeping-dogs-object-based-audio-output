@@ -3,12 +3,15 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 
 #include <Windows.h>
 
 #include "config.hh"
 #include "game.hh"
 #include "log.hh"
+#include "wwise_hooks.hh"
 
 namespace objects
 {
@@ -21,7 +24,12 @@ namespace objects
 	// spread smears the gain evenly (0.41-0.45 over 5-6 speakers). Spread sounds are area sounds: bed.
 	constexpr float kPointLike = 0.6f;
 
-	// gain × RMS below this (about -70 dBFS) isn't worth an object.
+	// An object keeps its slot down to this much below kPointLike: Wwise spread grows with proximity, and a
+	// source hovering at the threshold would otherwise crossfade back and forth every few buffers.
+	constexpr float kSpreadHysteresis = 0.1f;
+
+	// gain × RMS below this (about -70 dBFS) isn't worth a new object. A current object isn't demoted for being
+	// quiet: a decaying tail moving into the bed is an audible position jump for nothing.
 	constexpr float kMinLevel = 0.0003f;
 
 	// A voice keeps a new role at least this many buffers (~250 ms), so rankings that flip back and forth
@@ -46,7 +54,8 @@ namespace objects
 		uint64_t mLastSeen;
 		uint64_t mRoleSince;
 		float mScore;
-		bool mCandidate;
+		bool mCandidate; // may become an object
+		bool mHoldable;  // may stay one (looser than mCandidate: quiet is fine, spread has hysteresis)
 		Role mRole;
 		int mSlot;
 	};
@@ -64,7 +73,7 @@ namespace objects
 		uint32_t mInstant = 0;
 		uint32_t mPromoted = 0;
 		uint32_t mOutranked = 0;     // demoted: other voices louder
-		uint32_t mDisqualified = 0;  // demoted: became spread/quiet
+		uint32_t mDisqualified = 0;  // demoted: became spread, or a bed rule applies (player, bus fx)
 		uint32_t mUnrenderable = 0;  // demoted at once: lost its position or stopped being mono
 		uint32_t mShrunk = 0;        // demoted: objects switched off / limit lowered
 		uint32_t mEnded = 0;
@@ -156,6 +165,89 @@ namespace objects
 		return true;
 	}
 
+	// ---- Insert effects on the bus chain ----
+
+	// Objects are taken before the bus mix, so whatever effects the voice's bus and its parents run (EQ,
+	// compressor, limiter, slow-motion filters) never touch them. Each bus's active effects are remembered so
+	// the log shows the chain once, and again when it changes (bypass actions, buses re-created).
+	struct BusRecord
+	{
+		const void* mBus;
+		uint32_t mIds[vpl::kFxSlots];
+	};
+	constexpr int kMaxBusRecords = 32;
+	static BusRecord gBuses[kMaxBusRecords];
+	static int gBusCount = 0;
+	static int gBusNext = 0;
+
+	// True if `bus` (a CAkBusFX: mix bus or final mix) runs an effect that changes the audio: an effect in the
+	// slot, not bypassed, not "bypass all" (what CAkVPLMixBusNode::ProcessAllFX executes), and not the Meter,
+	// which only measures.
+	static bool BusHasFx(const void* bus)
+	{
+		uint32_t ids[vpl::kFxSlots] = {};
+		bool audible = false;
+		const bool bypassAll = At<uint8_t>(bus, vpl::kBypassAllFx) & 1;
+		for (uint32_t i = 0; i < vpl::kFxSlots; ++i) {
+			const uint8_t* slot = static_cast<const uint8_t*>(bus) + vpl::kFx + i * bus_fx::kStride;
+			if (At<void*>(slot, bus_fx::kEffect) && !(At<uint8_t>(slot, bus_fx::kFlags) & 1) && !bypassAll) {
+				ids[i] = At<uint32_t>(slot, bus_fx::kID);
+				audible |= ids[i] != kMeterFx;
+			}
+		}
+
+		BusRecord* rec = nullptr;
+		for (int i = 0; i < gBusCount; ++i) {
+			if (gBuses[i].mBus == bus) {
+				rec = &gBuses[i];
+				break;
+			}
+		}
+		if (!rec) {
+			// Buses are created and freed as they become active; the ring just forgets the oldest.
+			rec = &gBuses[gBusNext];
+			gBusNext = (gBusNext + 1) % kMaxBusRecords;
+			gBusCount = std::min(gBusCount + 1, kMaxBusRecords);
+			rec->mBus = bus;
+			std::memset(rec->mIds, 0, sizeof(rec->mIds));
+			if (!ids[0] && !ids[1] && !ids[2] && !ids[3]) {
+				return false; // the common case: nothing to say
+			}
+		}
+		if (std::memcmp(rec->mIds, ids, sizeof(ids)) != 0) {
+			std::memcpy(rec->mIds, ids, sizeof(ids));
+			char text[160] = "";
+			for (uint32_t i = 0; i < vpl::kFxSlots; ++i) {
+				if (ids[i]) {
+					snprintf(text + std::strlen(text), sizeof(text) - std::strlen(text), "%s%s (0x%X)",
+						text[0] ? ", " : "", PluginName(ids[i]), ids[i]);
+				}
+			}
+			LOG("objects: bus %p (id %u, parent %p) fx: %s", bus, At<uint32_t>(bus, vpl::kBusID),
+				At<void*>(bus, vpl::kParent), text[0] ? text : "none");
+		}
+		return audible;
+	}
+
+	// Effects anywhere between the voice's bus and the output. The master bus (final mix) counts only under
+	// policy 2: a master limiter/EQ is common and would rule out every object.
+	static bool ChainHasFx(const void* mixBus, int policy)
+	{
+		bool any = false;
+		uint64_t device = 0;
+		const void* bus = mixBus;
+		for (int depth = 0; bus && depth < 16; ++depth) {
+			any |= BusHasFx(bus);
+			device = At<uint64_t>(bus, vpl::kDevice);
+			bus = At<void*>(bus, vpl::kParent);
+		}
+		if (const void* master = FinalMixOf(device)) {
+			const bool masterFx = BusHasFx(master); // always evaluated so the log shows it
+			any |= masterFx && policy >= 2;
+		}
+		return any;
+	}
+
 	static float Norm7(const float* gains)
 	{
 		// Index 7 is LFE (Wwise's internal order: FL FR C BL BR SL SR LFE); objects carry no LFE send.
@@ -209,9 +301,17 @@ namespace objects
 		}
 		const float level = gainNext * downstream * std::sqrt(energy / spatial::kBlockFrames);
 
+		const float pointness = gainNext > 0.0f ? maxNext / gainNext : 1.0f;
+		const bool player = gConfig.mPlayerInBed.load(std::memory_order_relaxed) && IsPlayerVoice(pbi);
+		const int busPolicy = gConfig.mBusFx.load(std::memory_order_relaxed);
+		const bool busFx = ChainHasFx(mixBus, busPolicy) && busPolicy > 0;
+
 		Reason reason = Reason::Candidate;
-		if (gConfig.mPlayerInBed.load(std::memory_order_relaxed) && IsPlayerVoice(pbi)) {
+		if (player) {
 			reason = Reason::Player;
+		}
+		else if (busFx) {
+			reason = Reason::BusFx;
 		}
 		else if (rayCount > 1) {
 			reason = Reason::MultiPosition;
@@ -222,7 +322,7 @@ namespace objects
 		else if (gainNext <= 0.0f) {
 			reason = Reason::Quiet;
 		}
-		else if (maxNext / gainNext < kPointLike) {
+		else if (pointness < kPointLike) {
 			reason = Reason::Spread;
 		}
 		else if (level < kMinLevel) {
@@ -248,12 +348,15 @@ namespace objects
 			}
 			v = &gVoices[gVoiceCount++];
 			// Eligible for promotion right away: it has no bed/object history to protect.
-			*v = { pbi, playingID, 0, gFrame - kMinRoleFrames, 0.0f, false, Role::Bed, -1 };
+			*v = { pbi, playingID, 0, gFrame - kMinRoleFrames, 0.0f, false, false, Role::Bed, -1 };
 		}
 		const bool isNew = v->mLastSeen == 0;
 		v->mLastSeen = gFrame;
 		v->mCandidate = reason == Reason::Candidate;
-		v->mScore = v->mCandidate ? level : 0.0f;
+		// An object rides out its decay: only a clearly spread pan, a bed rule, or losing its mono single-position
+		// shape takes the slot away; louder candidates can still outrank it.
+		v->mHoldable = !player && !busFx && rayCount == 1 && mono && pointness >= kPointLike - kSpreadHysteresis;
+		v->mScore = level;
 
 		if (rayCount > 1 || !mono) {
 			// Can't be rendered as one mono object this buffer: straight back to the bed.
@@ -383,20 +486,23 @@ namespace objects
 			return &gBlock;
 		}
 
-		// Rank candidates for the next buffer.
+		// Rank for the next buffer: the candidates plus the objects allowed to keep their slot.
 		int order[kMaxVoices];
+		int pool = 0;
 		int candidates = 0;
 		for (int i = 0; i < gVoiceCount; ++i) {
-			if (gVoices[i].mCandidate) {
-				order[candidates++] = i;
+			const Voice& v = gVoices[i];
+			candidates += v.mCandidate;
+			if (v.mCandidate || (v.mRole == Role::Object && v.mHoldable)) {
+				order[pool++] = i;
 			}
 		}
 		gStats.mCandidatesMax = std::max(gStats.mCandidatesMax, candidates);
 		auto rank = [](const Voice& v) { return v.mRole == Role::Object ? v.mScore * kKeepBonus : v.mScore; };
-		std::sort(order, order + candidates, [&](int a, int b) { return rank(gVoices[a]) > rank(gVoices[b]); });
+		std::sort(order, order + pool, [&](int a, int b) { return rank(gVoices[a]) > rank(gVoices[b]); });
 
 		bool wanted[kMaxVoices] = {};
-		for (int n = 0; n < candidates && n < static_cast<int>(gTarget); ++n) {
+		for (int n = 0; n < pool && n < static_cast<int>(gTarget); ++n) {
 			wanted[order[n]] = true;
 		}
 
@@ -405,7 +511,7 @@ namespace objects
 			if (v.mRole != Role::Object || wanted[i] || v.mSlot >= static_cast<int>(gTarget)) {
 				continue;
 			}
-			if (!v.mCandidate) {
+			if (!v.mHoldable) {
 				SetRole(v, Role::FadeOut, v.mSlot);
 				++gStats.mDisqualified;
 			}
@@ -414,9 +520,9 @@ namespace objects
 				++gStats.mOutranked;
 			}
 		}
-		for (int n = 0; n < candidates && n < static_cast<int>(gTarget); ++n) {
+		for (int n = 0; n < pool && n < static_cast<int>(gTarget); ++n) {
 			Voice& v = gVoices[order[n]];
-			if (v.mRole == Role::Bed && gFrame - v.mRoleSince >= kMinRoleFrames) {
+			if (v.mRole == Role::Bed && v.mCandidate && gFrame - v.mRoleSince >= kMinRoleFrames) {
 				const int slot = FreeSlot();
 				if (slot < 0) {
 					break;
@@ -446,7 +552,7 @@ namespace objects
 	void LogStats()
 	{
 		LOG("objects: target %u, budget %u, slots in use %d; since last: %u instant, %u promoted; demoted %u outranked, "
-			"%u disqualified, %u unrenderable, %u switched off; %u ended as objects; max %d voices tracked, "
+			"%u disqualified (spread/player/bus fx), %u unrenderable, %u switched off; %u ended as objects; max %d voices tracked, "
 			"max %d candidates%s",
 			gTarget, gBudget, std::popcount(gSlotsUsed), gStats.mInstant, gStats.mPromoted, gStats.mOutranked,
 			gStats.mDisqualified, gStats.mUnrenderable, gStats.mShrunk, gStats.mEnded, gStats.mVoicesMax,

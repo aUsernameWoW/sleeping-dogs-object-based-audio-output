@@ -44,6 +44,12 @@ namespace config
 		"; the camera, so as objects they'd be a sharp point ~3 m ahead of the viewer.\n"
 		"PlayerInBed = 1\n"
 		"\n"
+		"; 对象绕过总线上的插入效果（EQ、压缩、限幅……）。1 = 经过这类总线的声音留在床里（主总线除外），\n"
+		"; 2 = 主总线上有效果时也不出对象，0 = 不管。日志会写出哪些总线带效果。\n"
+		"; Objects skip the insert effects on their bus chain. 1 = voices on buses with effects stay in the bed\n"
+		"; (master bus excepted), 2 = master bus included, 0 = ignore. The log lists the buses with effects.\n"
+		"BusFx = 1\n"
+		"\n"
 		"[Overlay]\n"
 		"; 需要 ReShade（支持插件的版本）。设置也可以在 ReShade 菜单的 SDAtmos 标签页里改。\n"
 		"; Needs ReShade with add-on support; everything here is also in the SDAtmos tab of the ReShade menu.\n"
@@ -121,6 +127,7 @@ namespace config
 		gConfig.mMaxObjects = ReadInt(L"Objects", L"MaxObjects", gConfig.mMaxObjects);
 		gConfig.mObjectDistance = ReadFloat(L"Objects", L"Distance", gConfig.mObjectDistance);
 		gConfig.mPlayerInBed = ReadBool(L"Objects", L"PlayerInBed", gConfig.mPlayerInBed);
+		gConfig.mBusFx = ReadInt(L"Objects", L"BusFx", gConfig.mBusFx);
 		gConfig.mHud =ReadBool(L"Overlay", L"Hud", gConfig.mHud);
 		gConfig.mHudRadar = ReadBool(L"Overlay", L"Radar", gConfig.mHudRadar);
 		gConfig.mHudMarkers = ReadBool(L"Overlay", L"Markers", gConfig.mHudMarkers);
@@ -135,6 +142,9 @@ namespace config
 
 		if (gConfig.mMaxObjects < 0) {
 			gConfig.mMaxObjects = 0;
+		}
+		if (gConfig.mBusFx < 0 || gConfig.mBusFx > 2) {
+			gConfig.mBusFx = 1;
 		}
 		if (!(gConfig.mObjectDistance > 0.1f && gConfig.mObjectDistance < 100.0f)) {
 			gConfig.mObjectDistance = 2.0f;
@@ -223,6 +233,7 @@ namespace config
 		SetValue(text, "Objects", "MaxObjects", std::to_string(gConfig.mMaxObjects.load()));
 		SetValue(text, "Objects", "Distance", FormatFloat(gConfig.mObjectDistance));
 		SetValue(text, "Objects", "PlayerInBed", gConfig.mPlayerInBed ? "1" : "0");
+		SetValue(text, "Objects", "BusFx", std::to_string(gConfig.mBusFx.load()));
 		SetValue(text, "Overlay", "Hud", gConfig.mHud ? "1" : "0");
 		SetValue(text, "Overlay", "Radar", gConfig.mHudRadar ? "1" : "0");
 		SetValue(text, "Overlay", "Markers", gConfig.mHudMarkers ? "1" : "0");

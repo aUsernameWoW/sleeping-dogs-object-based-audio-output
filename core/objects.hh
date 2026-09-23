@@ -13,8 +13,11 @@
 //   - the player's own voices (the listener is the camera, so they sit ~3 m ahead of it) stay in the bed, where
 //     the game's close-range spread makes them enveloping rather than a point in front (PlayerInBed);
 //   - a brand-new candidate grabs a free slot immediately, so its attack is an object from the first sample;
+//   - voices whose bus chain runs insert effects (EQ, compressor...) stay in the bed, since an object would
+//     skip them (BusFx policy; the master bus only under policy 2);
 //   - once per frame the candidates are ranked by level (gain × signal RMS, current objects count double for
-//     hysteresis) and the budget is redistributed;
+//     hysteresis) and the budget is redistributed; an object keeps its slot while it decays or hovers around
+//     the spread threshold, and loses it only to louder candidates or a clear change of shape;
 //   - moving between bed and object crossfades over one buffer (21 ms) through Wwise's own gain ramp;
 //   - turning objects off (A/B) or lowering the limit crossfades the affected objects back first.
 // All functions run on the Wwise audio thread.

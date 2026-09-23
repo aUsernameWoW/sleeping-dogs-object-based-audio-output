@@ -76,12 +76,40 @@ namespace wwise
 	};
 	static_assert(sizeof(AkRayVolumeData) == 36);
 
-	// AkVPL: a mix bus instance. Starts with its CAkVPLMixBusNode, so the node pointer passed to
-	// CAkVPLMixBusNode::ConsumeBuffer is also the AkVPL pointer.
+	// AkVPL: a mix bus instance. Starts with its CAkVPLMixBusNode (CAkBusFX : CAkBusVolumes), so the node
+	// pointer passed to CAkVPLMixBusNode::ConsumeBuffer is also the AkVPL pointer. The device's master bus is
+	// a CAkVPLFinalMixNode, which is a CAkBusFX too (same FX offsets) but not an AkVPL.
 	namespace vpl
 	{
+		constexpr size_t kBusID = 0x408;          // uint32 (CAkBusVolumes)
+		constexpr size_t kParent = 0x410;         // AkVPL*: the bus this one mixes into, null = the device's final mix
+		constexpr size_t kFx = 0x480;             // CAkBusFX::FX[4] insert effects
+		constexpr size_t kBypassAllFx = 0x520;    // bit 0
 		constexpr size_t kDownstreamGain = 0x550; // float
+		constexpr size_t kDevice = 0x558;         // uint64 device ID (AkVPL)
+		constexpr uint32_t kFxSlots = 4;
 	}
+
+	namespace bus_fx // CAkBusFX::FX (40 bytes)
+	{
+		constexpr size_t kStride = 40;
+		constexpr size_t kID = 0x0;     // AkPluginID
+		constexpr size_t kEffect = 0x10; // IAkInPlaceEffectPlugin*, null = empty slot
+		constexpr size_t kFlags = 0x20;  // bit 0 bBypass
+	}
+
+	namespace device // AkDevice (CAkOutputMgr::m_Devices items, 0x50 bytes; the AkArray is pItems*, uint32 length)
+	{
+		constexpr size_t kStride = 0x50;
+		constexpr size_t kFinalMix = 0x0; // CAkVPLFinalMixNode*
+		constexpr size_t kID = 0x18;      // uint64
+	}
+
+	// AkPluginID = type | company << 4 | plugin << 14; type 3 = effect.
+	constexpr uint32_t PluginType(uint32_t id) { return id & 0xF; }
+	constexpr uint32_t PluginCompany(uint32_t id) { return (id >> 4) & 0x3FF; }
+	constexpr uint32_t PluginIndex(uint32_t id) { return id >> 14; }
+	constexpr uint32_t kMeterFx = 3 | (0x81u << 14); // Wwise Meter: measures, doesn't change the audio
 
 	namespace device_info // AkDeviceInfo, one per output device a voice feeds
 	{

@@ -51,7 +51,8 @@ Wwise 引擎，改由 `ISpatialAudioClient` 输出：
 
 - **F9**：开关动态对象，用来和纯 7.1 声道床做 A/B 对比。
 - **F8**：HUD（需要 ReShade）。显示所有带位置的声音的雷达图，并在画面上标出它们的方向。青色 = 对象，黄色 =
-  符合条件但在排队，灰色 = 留在床里，绿色 = 沈威自己的声音（留在床里，`PlayerInBed`）。
+  符合条件但在排队，灰色 = 留在床里，绿色 = 沈威自己的声音（留在床里，`PlayerInBed`），橙色 = 所在总线带插入
+  效果（留在床里，`BusFx`）。
 - ReShade 菜单 → **SDAtmos** 标签页：流状态、实时设置、声音列表、保存到 ini。
 
 ### 编译
@@ -125,7 +126,7 @@ In game:
 - **F9**: dynamic objects on/off. This is an A/B switch against the plain 7.1 bed.
 - **F8**: HUD (needs ReShade). It shows a radar of every positioned sound and markers at their on-screen
   directions. Cyan = object, yellow = qualifies but waiting, gray = stays in the bed, green = the player's
-  own sounds (kept in the bed, `PlayerInBed`).
+  own sounds (kept in the bed, `PlayerInBed`), orange = its bus runs insert effects (kept in the bed, `BusFx`).
 - ReShade menu → **SDAtmos** tab: stream status, live settings, voice list, save to ini.
 
 ### Building

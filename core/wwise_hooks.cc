@@ -26,6 +26,11 @@ namespace wwise
 	constexpr char kSigConsumeBuffer[] =                                                     // CAkVPLMixBusNode::ConsumeBuffer(AkVPLState&, AkAudioMix*)
 		"48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 66 83 7A ? ? 49 8B F0 48 8B FA 48 8B D9 76";
 
+	// CAkLEngine::AnalyzeMixingGraph, where a top-level bus looks up its device's final mix:
+	//   mov r8d, [rip + m_Devices.m_uLength]; mov eax, ebp; test r8d, r8d; jz; mov r11, [rip + m_Devices.m_pItems]
+	constexpr char kSigDevices[] = "44 8B 05 ? ? ? ? 8B C5 45 85 C0 74 ? 4C 8B 1D ? ? ? ? 4C 8B 92 58 05 00 00 49 8D 4B 18 4C 39 11";
+	constexpr size_t kDevicesItemsLoad = 14; // offset of the mov r11 (RIP disp at +3)
+
 	// CAkSinkXAudio2::Init + 0x4D: mov r9d, [rip + AkAudioLibSettings::g_pipelineCoreFrequency]
 	constexpr size_t kInitRateLoad = 0x4D;
 
@@ -41,7 +46,50 @@ namespace wwise
 	static ConsumeBufferFn gConsumeBuffer = nullptr;
 
 	static const uint32_t* gSampleRate = nullptr;
+	static const uint8_t* gDevices = nullptr; // CAkOutputMgr::m_Devices: AkDevice* pItems, uint32 length
 	static void* gMainSink = nullptr;
+
+	const void* FinalMixOf(uint64_t deviceID)
+	{
+		if (!gDevices) {
+			return nullptr;
+		}
+		const uint8_t* items = *reinterpret_cast<const uint8_t* const*>(gDevices);
+		const uint32_t count = *reinterpret_cast<const uint32_t*>(gDevices + 8);
+		for (uint32_t i = 0; items && i < count; ++i) {
+			const uint8_t* dev = items + i * device::kStride;
+			if (At<uint64_t>(dev, device::kID) == deviceID) {
+				return At<void*>(dev, device::kFinalMix);
+			}
+		}
+		return nullptr;
+	}
+
+	const char* PluginName(uint32_t id)
+	{
+		// UFG::WwiseInterface::RegisterPlugins (legacy PDB): the effects this game links.
+		const uint32_t index = PluginIndex(id);
+		if (PluginCompany(id) == 0x100) {
+			return index == 0x67 ? "McDSP ML1" : index == 0x6E ? "McDSP FutzBox" : "McDSP?";
+		}
+		switch (index) {
+		case 0x69: return "ParametricEQ";
+		case 0x6A: return "Delay";
+		case 0x6C: return "Compressor";
+		case 0x73: return "MatrixReverb";
+		case 0x74: return "SoundSeedImpact";
+		case 0x76: return "RoomVerb";
+		case 0x7D: return "Flanger";
+		case 0x7F: return "ConvolutionReverb";
+		case 0x81: return "Meter";
+		case 0x82: return "TimeStretch";
+		case 0x83: return "Tremolo";
+		case 0x88: return "PitchShifter";
+		case 0x8A: return "Harmonizer";
+		case 0x8B: return "Gain";
+		default: return "?";
+		}
+	}
 	static bool gBedEnabled = false;
 	static bool gVoiceHooks = false;
 	static uint64_t gBufferCount = 0;
@@ -328,6 +376,10 @@ namespace wwise
 		if ((gConfig.mVoiceLog || gBedEnabled) && sinkOk) {
 			uint8_t* runVPL = scan::FindUnique("CAkLEngine::RunVPL", kSigRunVPL);
 			uint8_t* consume = scan::FindUnique("CAkVPLMixBusNode::ConsumeBuffer", kSigConsumeBuffer);
+			if (uint8_t* devices = scan::FindUnique("CAkOutputMgr::m_Devices", kSigDevices)) {
+				// Without it only the master bus's effects go unseen; the router then treats it as clean.
+				gDevices = static_cast<const uint8_t*>(scan::RipTarget(devices + kDevicesItemsLoad + 3));
+			}
 			gVoiceHooks = Hook("RunVPL", runVPL, &RunVPLHook, gRunVPL) &&
 				Hook("ConsumeBuffer", consume, &ConsumeBufferHook, gConsumeBuffer);
 			if (!gVoiceHooks) {

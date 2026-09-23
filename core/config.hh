@@ -26,6 +26,11 @@ struct Config
 	// spread (front + side pairs), which is what the original mix did.
 	std::atomic<bool> mPlayerInBed{ true };
 
+	// Objects are carved out before the bus mix, so they skip every insert effect on the voice's bus chain
+	// (EQ, compressor, limiter...). 0 = ignore that, 1 = such voices stay in the bed (master bus excepted:
+	// a master limiter would rule out every object), 2 = master bus included.
+	std::atomic<int> mBusFx{ 1 };
+
 	// HUD drawn over the game through ReShade (needs ReShade with add-on support).
 	std::atomic<bool> mHud{ false };
 	std::atomic<bool> mHudRadar{ true };

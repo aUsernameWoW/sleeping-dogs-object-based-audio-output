@@ -16,6 +16,7 @@ namespace telemetry
 		NotMono,       // stereo or more channels
 		MultiPosition, // several emitter positions (one sound, many places)
 		Player,        // the local player's own sounds: kept in the bed like the original mix
+		BusFx,         // its bus chain has insert effects an object would skip
 	};
 
 	struct Voice

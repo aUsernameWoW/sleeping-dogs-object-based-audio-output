@@ -65,6 +65,18 @@ Status (2026-09-22):
   gives ~0.41-0.45). New candidates take a free slot immediately (attack is an object from sample 0, no
   crossfade needed); every frame candidates are re-ranked by gain × RMS × downstream, current objects ×2,
   roles held ≥ 12 frames; bed↔object moves crossfade over one 1024-frame buffer.
+- **Objects ride out their decay** (2026-09-23): the first log showed ~47 demotions per 5 s in fights, mostly
+  tails dropping under -70 dB or spread hovering at the 0.6 threshold, each a 21 ms position jump. Now a
+  current object is only demoted when outranked by louder candidates, when its pan gets clearly spread
+  (point-likeness < 0.5), when a bed rule applies (player, bus fx), or when it stops being mono/single-position.
+  `kMinLevel` only gates new objects.
+- **Voices on buses with insert effects stay in the bed** (`BusFx`, default 1): objects skip the bus chain, so
+  bus EQ/compression/limiting/slow-motion filters would be missing from them. Checked per buffer by walking
+  `AkVPL::m_pParent` up from the voice's dry bus and reading `CAkBusFX::m_aFX` (effect present, not bypassed,
+  Meter ignored). The device's final mix (master bus) is looked up via `CAkOutputMgr::m_Devices` and only
+  counts under policy 2, since a master limiter would rule out every object. The log lists each bus's active
+  effects when first seen/changed ("objects: bus ... fx: ..."); the first in-game log decides whether 1 or 2
+  is the right default.
 - **Objects never get dropped**: if Windows refuses a dynamic object, the render thread pans that slot into the
   bed (constant power between adjacent bed speakers).
 - Object position = Wwise's direction on a sphere of `Distance` m (default 2): distance attenuation is already
@@ -131,6 +143,17 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
   `phi = asin(up / r)` (**positive = up**), from the listener matrix (row 0 right, row 1 up, row 2 front).
   The listener is the camera, so the player's own sounds sit at r≈3.8 m, phi≈-23°.
 - `CAkPBI` +0x173 bits 0-1 = panner type (0 = 2D). Layouts in `core/wwise.hh`.
+- **Bus chain**: `AkVPL` = `CAkVPLMixBusNode` (: `CAkBusFX` : `CAkBusVolumes`) + downstream gain (+0x550) +
+  device ID (+0x558). `CAkBusVolumes::m_pParent` (+0x410) is the parent AkVPL, null at the top, which feeds the
+  device's `CAkVPLFinalMixNode` (`AkDevice::pFinalMix`, `CAkOutputMgr::m_Devices` items of 0x50 bytes, ID at
+  +0x18). `CAkBusFX::m_aFX[4]` at +0x480 (40 bytes each: plugin ID, +0x10 effect, +0x20 bit 0 bypass),
+  `m_bBypassAllFX` +0x520 bit 0. `ProcessAllFX` runs a slot iff effect && !(bypass | bypassAll).
+  AkVPLs are created/freed as buses become active, so pointers recycle.
+- **Plugins the game registers** (`UFG::WwiseInterface::RegisterPlugins`, IDs = type | company << 4 |
+  index << 14): Audiokinetic effects ParametricEQ 0x69, Delay 0x6A, Compressor 0x6C, MatrixReverb 0x73,
+  SoundSeedImpact 0x74, RoomVerb 0x76, Flanger 0x7D, ConvolutionReverb 0x7F, Meter 0x81, TimeStretch 0x82,
+  Tremolo 0x83, PitchShifter 0x88, Harmonizer 0x8A, Gain 0x8B; McDSP (company 0x100) ML1 limiter 0x67,
+  FutzBox 0x6E. No Wwise Peak Limiter, so a master limiter would be ML1.
 
 ## How the game feeds Wwise (legacy addresses, SDmodding SDK names)
 
@@ -158,9 +181,11 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
 4. Dynamic objects — built, awaiting in-game test. Watch: object loudness vs original (objects skip bus FX,
    e.g. a master limiter or slow-motion filters on buses), audible jumps on promotion/demotion, activation
    failures, whether 20 objects are enough in fights.
-5. Next: confirm the player-entity detection in-game (log line + green HUD markers on Wei), detailed listening
-   session (A/B with F9), NPC voice height (feet vs head), radar check. Possible experiment: flip the game's
-   own `m_positionListenerAtCamera` to hear the listener-at-player hybrid.
+5. Next: confirm in-game (a) the player-entity detection (log line + green HUD markers on Wei), (b) which
+   buses carry effects (log "objects: bus ... fx:") and whether objects survive `BusFx = 1`, (c) demotion
+   counts per 5 s dropped. Then: detailed listening session (A/B with F9), NPC voice height (feet vs head),
+   radar check. Possible experiment: flip the game's own `m_positionListenerAtCamera` to hear the
+   listener-at-player hybrid.
 6. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
    gunshots/vehicles by sound ID), maybe a ReShade overlay showing objects.
 
