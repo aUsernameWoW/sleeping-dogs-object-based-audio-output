@@ -105,11 +105,31 @@ namespace wwise
 		constexpr size_t kID = 0x18;      // uint64
 	}
 
-	// AkPluginID = type | company << 4 | plugin << 14; type 3 = effect.
+	// AkPluginID = type | company << 4 | plugin << 16 (AKMAKECLASSID); type 3 = effect, company 0 = Audiokinetic.
 	constexpr uint32_t PluginType(uint32_t id) { return id & 0xF; }
-	constexpr uint32_t PluginCompany(uint32_t id) { return (id >> 4) & 0x3FF; }
-	constexpr uint32_t PluginIndex(uint32_t id) { return id >> 14; }
-	constexpr uint32_t kMeterFx = 3 | (0x81u << 14); // Wwise Meter: measures, doesn't change the audio
+	constexpr uint32_t PluginCompany(uint32_t id) { return (id >> 4) & 0xFFF; }
+	constexpr uint32_t PluginIndex(uint32_t id) { return id >> 16; }
+	constexpr uint32_t kMeterFx = 3 | (0x81u << 16);        // Wwise Meter: measures, doesn't change the audio
+	constexpr uint32_t kParametricEqFx = 3 | (0x69u << 16); // Wwise Parametric EQ: objects apply it themselves
+
+	// CAkParametricEQFX, the instance behind a Parametric EQ slot. Execute() runs each enabled band as a biquad
+	// y = c0 x + c1 x1 + c2 x2 + c3 y1 + c4 y2 (c3/c4 already negated and normalized), recomputing a band's
+	// coefficients first when its dirty flag is set, then ramps to the output level.
+	namespace eq_fx
+	{
+		constexpr size_t kCoefs = 0x8;         // float[3][5]
+		constexpr size_t kSharedParams = 0x48; // CAkParameterEQFXParams*
+		constexpr uint32_t kBands = 3;
+	}
+
+	namespace eq_params // CAkParameterEQFXParams
+	{
+		constexpr size_t kBand = 0x8;        // EQModuleParams[3]: type, gain dB, frequency, Q, on/off
+		constexpr size_t kBandStride = 20;
+		constexpr size_t kBandOn = 0x10;
+		constexpr size_t kOutputLevel = 0x44; // float dB
+		constexpr size_t kBandDirty = 0x4C;   // bool[3]
+	}
 
 	namespace device_info // AkDeviceInfo, one per output device a voice feeds
 	{

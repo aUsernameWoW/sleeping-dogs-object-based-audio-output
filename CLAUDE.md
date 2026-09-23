@@ -21,7 +21,13 @@ Status (2026-09-22):
   probably the character root, not the head). Not investigated yet.
 - 2026-09-23: the user heard Wei Shen's own footsteps as a sharp point ~3 m ahead, slightly left (the
   over-the-shoulder camera). His voices are now identified by game object and kept in the bed
-  (`PlayerInBed`, HUD green); awaiting the in-game check that the log shows "player audio entity ...".
+  (`PlayerInBed`, HUD green). First test: vault/climb sounds went green (the component's own entity), the
+  footsteps stayed cyan: they play on pooled `OneShot` entities, now matched through their owner handle.
+  Second test pending.
+- Same day, first log with the router changes: demotions per 5 s fell from ~47 to 0-4. Only one bus carries
+  an effect: a top-level bus (id 1900298039, feeds the final mix) with a Parametric EQ; the master has none.
+  `BusFx = 1` had pushed everything under it into the bed (3/20 objects on the HUD), so objects now run that
+  EQ themselves instead.
 
 ## Files
 
@@ -70,13 +76,15 @@ Status (2026-09-22):
   current object is only demoted when outranked by louder candidates, when its pan gets clearly spread
   (point-likeness < 0.5), when a bed rule applies (player, bus fx), or when it stops being mono/single-position.
   `kMinLevel` only gates new objects.
-- **Voices on buses with insert effects stay in the bed** (`BusFx`, default 1): objects skip the bus chain, so
-  bus EQ/compression/limiting/slow-motion filters would be missing from them. Checked per buffer by walking
-  `AkVPL::m_pParent` up from the voice's dry bus and reading `CAkBusFX::m_aFX` (effect present, not bypassed,
-  Meter ignored). The device's final mix (master bus) is looked up via `CAkOutputMgr::m_Devices` and only
-  counts under policy 2, since a master limiter would rule out every object. The log lists each bus's active
-  effects when first seen/changed ("objects: bus ... fx: ..."); the first in-game log decides whether 1 or 2
-  is the right default.
+- **Bus insert effects**: objects skip the bus chain, so bus EQ/compression/limiting/slow-motion filters
+  would be missing from them. Checked per buffer by walking `AkVPL::m_pParent` up from the voice's dry bus
+  and reading `CAkBusFX::m_aFX` (effect present, not bypassed, Meter ignored). **Parametric EQs are
+  reproduced on the object**: `CAkParametricEQFX` keeps the per-band biquad coefficients (already normalized,
+  a1/a2 negated) and its params hold band on/off, dirty flags and the output level, so `ApplyEq` runs the
+  same filters on the object's samples with per-slot memories (a dirty band is skipped for one buffer).
+  Effects that can't be reproduced keep the voice in the bed under `BusFx` (default 1; the device's final
+  mix, looked up via `CAkOutputMgr::m_Devices`, only counts under policy 2 since a master limiter would rule
+  out every object). The log lists each bus's active effects when first seen/changed.
 - **Objects never get dropped**: if Windows refuses a dynamic object, the render thread pans that slot into the
   bed (constant power between adjacent bed speakers).
 - Object position = Wwise's direction on a sphere of `Distance` m (default 2): distance attenuation is already
@@ -149,8 +157,8 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
   +0x18). `CAkBusFX::m_aFX[4]` at +0x480 (40 bytes each: plugin ID, +0x10 effect, +0x20 bit 0 bypass),
   `m_bBypassAllFX` +0x520 bit 0. `ProcessAllFX` runs a slot iff effect && !(bypass | bypassAll).
   AkVPLs are created/freed as buses become active, so pointers recycle.
-- **Plugins the game registers** (`UFG::WwiseInterface::RegisterPlugins`, IDs = type | company << 4 |
-  index << 14): Audiokinetic effects ParametricEQ 0x69, Delay 0x6A, Compressor 0x6C, MatrixReverb 0x73,
+- **Plugins the game registers** (`UFG::WwiseInterface::RegisterPlugins`, index part of the ID):
+  Audiokinetic effects ParametricEQ 0x69, Delay 0x6A, Compressor 0x6C, MatrixReverb 0x73,
   SoundSeedImpact 0x74, RoomVerb 0x76, Flanger 0x7D, ConvolutionReverb 0x7F, Meter 0x81, TimeStretch 0x82,
   Tremolo 0x83, PitchShifter 0x88, Harmonizer 0x8A, Gain 0x8B; McDSP (company 0x100) ML1 limiter 0x67,
   FutzBox 0x6E. No Wwise Peak Limiter, so a master limiter would be ML1.
@@ -164,8 +172,14 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
   `AudioEntity` (`m_SFXEntity`, +0x198, named "<name>__SFX") in `CheckInitialize` (0x140597c50) when the
   character is within 65 m (300 m for the player, `m_isPlayer` = +0x229 bit 3).
 - **Local player**: SimObject named "PlayerOne_Havok", qSymbol 0x90ECB5FF (CRC-32 poly 0x04C11DB7, init -1, no
-  final xor; SDK `sim/localplayer.hh`). Seen in logs as two game objects: the component (footsteps, gain
-  0.249, r 2.6-3.1 m, phi -24..-31°) and the SFX entity (quiet foley on another bus, dryMix 0.63).
+  final xor; SDK `sim/localplayer.hh`). His sounds come from three kinds of game object: the component's own
+  entity (vaults, climbs, voice), the SFX entity (quiet foley on another bus, dryMix 0.63), and **pooled
+  `UFG::OneShot` entities** (0x170 bytes, `gOneShotPool`, named "OneShot_%3u" with pool index + 100) that
+  `ActorAudioComponent::PlayFootstep` fires through the component's `m_leftFootstep`/`m_rightFootstep`
+  handles (+0x1C0/+0x1C8); `OneShot::m_pOwnerHandle` (+0x158) points back at that handle, which is how the
+  router attributes them (footsteps at r 2.6-3.1 m, phi -24..-31°, gain 0.249).
+- **Plugin IDs** are `type | company << 4 | index << 16` (company is 12 bits). The one bus effect seen so far
+  is 0x690003 = Parametric EQ on a top-level bus.
 - **Listener** (`UFG::AudioListener`, singleton `sm_pInstance` RVA 0x2175E30; `Update` at 0x14014d410):
   orientation is always the camera's; position is the camera when `m_positionListenerAtCamera` (+0x81, default
   1) else the local player's transform, both lerped 0.2/frame. Script methods
@@ -181,9 +195,9 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
 4. Dynamic objects — built, awaiting in-game test. Watch: object loudness vs original (objects skip bus FX,
    e.g. a master limiter or slow-motion filters on buses), audible jumps on promotion/demotion, activation
    failures, whether 20 objects are enough in fights.
-5. Next: confirm in-game (a) the player-entity detection (log line + green HUD markers on Wei), (b) which
-   buses carry effects (log "objects: bus ... fx:") and whether objects survive `BusFx = 1`, (c) demotion
-   counts per 5 s dropped. Then: detailed listening session (A/B with F9), NPC voice height (feet vs head),
+5. Next: confirm in-game (a) Wei's footsteps now green (log "player audio component ..."), (b) the EQ bus
+   logged as "[applied to objects]" with objects back to normal counts, and no audible timbre difference
+   between object and bed (F9 A/B on a sound under that bus). Then: detailed listening session (A/B with F9), NPC voice height (feet vs head),
    radar check. Possible experiment: flip the game's own `m_positionListenerAtCamera` to hear the
    listener-at-player hybrid.
 6. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for

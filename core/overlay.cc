@@ -353,7 +353,7 @@ namespace overlay
 		}
 		Checkbox("Player's own sounds stay in the bed (footsteps, foley)", gConfig.mPlayerInBed);
 		int busFx = gConfig.mBusFx.load();
-		if (ImGui::Combo("Buses with insert effects", &busFx, "ignore\0voices stay in the bed (master bus excepted)\0same, master bus included\0", -1)) {
+		if (ImGui::Combo("Buses with effects other than EQ", &busFx, "ignore\0voices stay in the bed (master bus excepted)\0same, master bus included\0", -1)) {
 			gConfig.mBusFx = busFx;
 		}
 

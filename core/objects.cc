@@ -68,6 +68,12 @@ namespace objects
 	static uint32_t gBudget = 0;    // slots that may still be in use (> gTarget while shrinking)
 	static uint32_t gSlotsUsed = 0; // slots owned by a voice (any role but Bed)
 
+	// Bus Parametric EQs an object reproduces (see "Insert effects" below): biquad memories (x1 x2 y1 y2) per
+	// slot, EQ stage and band, so the filters run continuously across buffers like the bus's do. Cleared when a
+	// slot changes hands.
+	constexpr int kMaxEqStages = 4; // EQ instances along one voice's bus chain
+	static float gEqState[spatial::kMaxObjects][kMaxEqStages][eq_fx::kBands][4];
+
 	struct Stats
 	{
 		uint32_t mInstant = 0;
@@ -110,6 +116,9 @@ namespace objects
 		}
 		if (slot >= 0) {
 			gSlotsUsed |= 1u << slot;
+			if (slot != v.mSlot) {
+				std::memset(gEqState[slot], 0, sizeof(gEqState[slot]));
+			}
 		}
 		v.mRole = role;
 		v.mSlot = slot;
@@ -119,20 +128,18 @@ namespace objects
 	// ---- The player's own game objects ----
 
 	// Wwise game object IDs are addresses of the game's AudioEntity objects (see game.hh). The player's actor
-	// component is found by its SimObject name; its second ("__SFX") entity by the pointer the component holds.
-	static uint64_t gPlayerEntity = 0;
+	// component is found by its SimObject name, its second ("__SFX") entity by the pointer the component holds,
+	// and its footsteps/impacts play on pooled OneShot entities whose owner handle points into the component.
+	static uint64_t gPlayerComponent = 0;
 	static uint64_t gPlayerSfxEntity = 0;
 
-	// Reads the entity's name and, for the player's component, its SFX entity pointer. The game frees the SFX
-	// entity right after unregistering it while a last buffer of its voices can still render, and the ID isn't
-	// guaranteed to be an entity at all, so the reads are SEH-guarded (hence no C++ objects in this function).
-	static bool ReadEntity(uint64_t entity, uint32_t& nameUID, uint64_t& sfxEntity)
+	// The game frees entities (OneShots, the SFX entity) right after unregistering them while a last buffer of
+	// their voices can still render, and an ID isn't guaranteed to be an entity at all, so every read of game
+	// memory is SEH-guarded (no C++ objects in these functions).
+	static bool ReadU32(uint64_t address, uint32_t& value)
 	{
 		__try {
-			nameUID = *reinterpret_cast<const uint32_t*>(entity + game::audio_entity::kName);
-			sfxEntity = nameUID == game::kPlayerNameUID
-				? *reinterpret_cast<const uint64_t*>(entity - game::actor_audio::kEntityBase + game::actor_audio::kSfxEntity)
-				: 0;
+			value = *reinterpret_cast<const uint32_t*>(address);
 			return true;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -140,36 +147,101 @@ namespace objects
 		}
 	}
 
+	static bool ReadU64(uint64_t address, uint64_t& value)
+	{
+		__try {
+			value = *reinterpret_cast<const uint64_t*>(address);
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+	}
+
+	static bool IsPointer(uint64_t value)
+	{
+		// The game also uses small numbers as IDs for global (2D) objects.
+		return value >= 0x10000 && value < 0x00007FFFFFFF0000ull;
+	}
+
+	static bool IsOneShotName(uint32_t nameUID)
+	{
+		static uint32_t names[game::one_shot::kMaxIndex - game::one_shot::kFirstIndex + 1];
+		static bool ready = false;
+		if (!ready) {
+			for (uint32_t i = game::one_shot::kFirstIndex; i <= game::one_shot::kMaxIndex; ++i) {
+				char text[16];
+				snprintf(text, sizeof(text), "OneShot_%3u", i);
+				names[i - game::one_shot::kFirstIndex] = game::SymbolUID(text);
+			}
+			std::sort(std::begin(names), std::end(names));
+			ready = true;
+		}
+		return std::binary_search(std::begin(names), std::end(names), nameUID);
+	}
+
+	static void LearnPlayerComponent(uint64_t component)
+	{
+		uint64_t sfx = 0;
+		ReadU64(component + game::actor_audio::kSfxEntity, sfx);
+		if (component != gPlayerComponent || sfx != gPlayerSfxEntity) {
+			// First sighting, re-created after a load, or the component re-initialized (new SFX entity).
+			LOG("objects: player audio component %llX (entity %llX), SFX entity %llX", component,
+				component + game::actor_audio::kEntityBase, sfx);
+			gPlayerComponent = component;
+			gPlayerSfxEntity = sfx;
+		}
+	}
+
 	static bool IsPlayerVoice(const void* pbi)
 	{
 		const void* gameObj = At<void*>(pbi, pbi::kGameObj);
 		const uint64_t entity = gameObj ? At<uint64_t>(gameObj, game_obj::kID) : 0;
-		if (entity < 0x10000 || entity >= 0x00007FFFFFFF0000ull) {
-			// Not a user-mode pointer: the game also uses small numbers for global (2D) objects.
+		if (!IsPointer(entity)) {
 			return false;
 		}
 		if (entity == gPlayerSfxEntity) {
 			return true;
 		}
 		uint32_t name = 0;
-		uint64_t sfx = 0;
-		if (!ReadEntity(entity, name, sfx) || name != game::kPlayerNameUID) {
+		if (!ReadU32(entity + game::audio_entity::kName, name)) {
 			return false;
 		}
-		if (entity != gPlayerEntity || sfx != gPlayerSfxEntity) {
-			// Re-created after a load, or the component re-initialized (new SFX entity).
-			LOG("objects: player audio entity %llX, SFX entity %llX", entity, sfx);
-			gPlayerEntity = entity;
-			gPlayerSfxEntity = sfx;
+		if (name == game::kPlayerNameUID) {
+			LearnPlayerComponent(entity - game::actor_audio::kEntityBase);
+			return true;
 		}
-		return true;
+		if (!IsOneShotName(name)) {
+			return false;
+		}
+		// A one-shot: whose handle owns it? Any handle inside the player's component counts (footsteps, but
+		// also whatever else the component fires). Before the component is known, the footstep handles reveal
+		// it: the handle's owner has the player's name.
+		uint64_t handle = 0;
+		if (!ReadU64(entity + game::one_shot::kOwnerHandle, handle) || !IsPointer(handle)) {
+			return false;
+		}
+		if (gPlayerComponent && handle >= gPlayerComponent && handle < gPlayerComponent + game::actor_audio::kSize) {
+			return true;
+		}
+		for (const size_t offset : { game::actor_audio::kLeftFootstep, game::actor_audio::kRightFootstep }) {
+			const uint64_t component = handle - offset;
+			uint32_t owner = 0;
+			if (ReadU32(component + game::actor_audio::kEntityBase + game::audio_entity::kName, owner) && owner == game::kPlayerNameUID) {
+				LearnPlayerComponent(component);
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// ---- Insert effects on the bus chain ----
 
-	// Objects are taken before the bus mix, so whatever effects the voice's bus and its parents run (EQ,
-	// compressor, limiter, slow-motion filters) never touch them. Each bus's active effects are remembered so
-	// the log shows the chain once, and again when it changes (bypass actions, buses re-created).
+	// Objects are taken before the bus mix, so whatever effects the voice's bus and its parents run never touch
+	// them. A Parametric EQ is linear and its instance holds the biquad coefficients, so objects run the same
+	// filters themselves (EqChain); anything else (compressor, limiter, delay...) can't be reproduced and keeps
+	// the voice in the bed under the BusFx policy. Each bus's active effects are remembered so the log shows the
+	// chain once, and again when it changes (bypass actions, buses re-created).
 	struct BusRecord
 	{
 		const void* mBus;
@@ -180,19 +252,31 @@ namespace objects
 	static int gBusCount = 0;
 	static int gBusNext = 0;
 
-	// True if `bus` (a CAkBusFX: mix bus or final mix) runs an effect that changes the audio: an effect in the
-	// slot, not bypassed, not "bypass all" (what CAkVPLMixBusNode::ProcessAllFX executes), and not the Meter,
-	// which only measures.
-	static bool BusHasFx(const void* bus)
+	struct EqChain
+	{
+		const void* mEffects[kMaxEqStages]; // CAkParametricEQFX*, voice bus first
+		int mCount;
+	};
+
+	// True if `bus` (a CAkBusFX: mix bus or final mix) runs an effect objects can't reproduce: an effect in the
+	// slot, not bypassed, not "bypass all" (what CAkVPLMixBusNode::ProcessAllFX executes), not the Meter (which
+	// only measures) and not a Parametric EQ (collected into `eq` instead, when there is room).
+	static bool BusHasFx(const void* bus, EqChain* eq)
 	{
 		uint32_t ids[vpl::kFxSlots] = {};
 		bool audible = false;
 		const bool bypassAll = At<uint8_t>(bus, vpl::kBypassAllFx) & 1;
 		for (uint32_t i = 0; i < vpl::kFxSlots; ++i) {
 			const uint8_t* slot = static_cast<const uint8_t*>(bus) + vpl::kFx + i * bus_fx::kStride;
-			if (At<void*>(slot, bus_fx::kEffect) && !(At<uint8_t>(slot, bus_fx::kFlags) & 1) && !bypassAll) {
+			const void* effect = At<void*>(slot, bus_fx::kEffect);
+			if (effect && !(At<uint8_t>(slot, bus_fx::kFlags) & 1) && !bypassAll) {
 				ids[i] = At<uint32_t>(slot, bus_fx::kID);
-				audible |= ids[i] != kMeterFx;
+				if (ids[i] == kParametricEqFx && eq && eq->mCount < kMaxEqStages) {
+					eq->mEffects[eq->mCount++] = effect;
+				}
+				else {
+					audible |= ids[i] != kMeterFx;
+				}
 			}
 		}
 
@@ -216,11 +300,12 @@ namespace objects
 		}
 		if (std::memcmp(rec->mIds, ids, sizeof(ids)) != 0) {
 			std::memcpy(rec->mIds, ids, sizeof(ids));
-			char text[160] = "";
+			char text[200] = "";
 			for (uint32_t i = 0; i < vpl::kFxSlots; ++i) {
 				if (ids[i]) {
-					snprintf(text + std::strlen(text), sizeof(text) - std::strlen(text), "%s%s (0x%X)",
-						text[0] ? ", " : "", PluginName(ids[i]), ids[i]);
+					snprintf(text + std::strlen(text), sizeof(text) - std::strlen(text), "%s%s (0x%X)%s",
+						text[0] ? ", " : "", PluginName(ids[i]), ids[i],
+						ids[i] == kParametricEqFx ? " [applied to objects]" : ids[i] == kMeterFx ? " [ignored]" : "");
 				}
 			}
 			LOG("objects: bus %p (id %u, parent %p) fx: %s", bus, At<uint32_t>(bus, vpl::kBusID),
@@ -229,23 +314,65 @@ namespace objects
 		return audible;
 	}
 
-	// Effects anywhere between the voice's bus and the output. The master bus (final mix) counts only under
-	// policy 2: a master limiter/EQ is common and would rule out every object.
-	static bool ChainHasFx(const void* mixBus, int policy)
+	// Effects anywhere between the voice's bus and the output that objects can't reproduce; `eq` receives the
+	// Parametric EQs they can. The master bus (final mix) counts only under policy 2: a master limiter/EQ is
+	// common and would rule out every object.
+	static bool ChainHasFx(const void* mixBus, int policy, EqChain& eq)
 	{
 		bool any = false;
 		uint64_t device = 0;
 		const void* bus = mixBus;
+		eq.mCount = 0;
 		for (int depth = 0; bus && depth < 16; ++depth) {
-			any |= BusHasFx(bus);
+			any |= BusHasFx(bus, &eq);
 			device = At<uint64_t>(bus, vpl::kDevice);
 			bus = At<void*>(bus, vpl::kParent);
 		}
 		if (const void* master = FinalMixOf(device)) {
-			const bool masterFx = BusHasFx(master); // always evaluated so the log shows it
+			const bool masterFx = BusHasFx(master, policy >= 2 ? &eq : nullptr); // always evaluated so the log shows it
 			any |= masterFx && policy >= 2;
 		}
 		return any;
+	}
+
+	// Runs the chain's EQs over an object's samples the way CAkParametricEQFX::Execute does: each enabled band
+	// as a biquad with the instance's coefficients, then the output level. A band whose coefficients are dirty
+	// (parameters just changed, not yet recomputed by the bus) is skipped for this buffer.
+	static void ApplyEq(const EqChain& eq, int slot, float* samples, uint32_t frames)
+	{
+		for (int stage = 0; stage < eq.mCount; ++stage) {
+			const void* effect = eq.mEffects[stage];
+			const void* params = At<void*>(effect, eq_fx::kSharedParams);
+			if (!params) {
+				continue;
+			}
+			for (uint32_t band = 0; band < eq_fx::kBands; ++band) {
+				const size_t bandOffset = eq_params::kBand + band * eq_params::kBandStride;
+				if (!At<bool>(params, bandOffset + eq_params::kBandOn) || At<bool>(params, eq_params::kBandDirty + band)) {
+					continue;
+				}
+				const float* c = &At<const float>(effect, eq_fx::kCoefs + band * 5 * sizeof(float));
+				float* m = gEqState[slot][stage][band];
+				float x1 = m[0], x2 = m[1], y1 = m[2], y2 = m[3];
+				for (uint32_t i = 0; i < frames; ++i) {
+					const float x = samples[i];
+					const float y = c[0] * x + c[1] * x1 + c[2] * x2 + c[3] * y1 + c[4] * y2;
+					x2 = x1;
+					x1 = x;
+					y2 = y1;
+					y1 = y;
+					samples[i] = y;
+				}
+				m[0] = x1; m[1] = x2; m[2] = y1; m[3] = y2;
+			}
+			const float level = At<float>(params, eq_params::kOutputLevel);
+			if (level != 0.0f) {
+				const float gain = std::pow(10.0f, level * 0.05f);
+				for (uint32_t i = 0; i < frames; ++i) {
+					samples[i] *= gain;
+				}
+			}
+		}
 	}
 
 	static float Norm7(const float* gains)
@@ -304,7 +431,8 @@ namespace objects
 		const float pointness = gainNext > 0.0f ? maxNext / gainNext : 1.0f;
 		const bool player = gConfig.mPlayerInBed.load(std::memory_order_relaxed) && IsPlayerVoice(pbi);
 		const int busPolicy = gConfig.mBusFx.load(std::memory_order_relaxed);
-		const bool busFx = ChainHasFx(mixBus, busPolicy) && busPolicy > 0;
+		EqChain eq;
+		const bool busFx = ChainHasFx(mixBus, busPolicy, eq) && busPolicy > 0;
 
 		Reason reason = Reason::Candidate;
 		if (player) {
@@ -392,6 +520,7 @@ namespace objects
 			const float gain = (gainPrev + (gainNext - gainPrev) * t) * (w0 + (w1 - w0) * t) * downstream;
 			out[i] = i < valid ? samples[i] * gain : 0.0f;
 		}
+		ApplyEq(eq, v->mSlot, out, spatial::kBlockFrames);
 
 		// Wwise's listener-relative direction: theta = atan2(right, front), phi = asin(up / r). Windows wants
 		// +x right, +y up, +z behind.
