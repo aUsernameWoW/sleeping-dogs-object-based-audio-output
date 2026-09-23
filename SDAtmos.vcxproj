@@ -110,6 +110,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\config.hh" />
+    <ClInclude Include="core\game.hh" />
     <ClInclude Include="core\log.hh" />
     <ClInclude Include="core\objects.hh" />
     <ClInclude Include="core\overlay.hh" />

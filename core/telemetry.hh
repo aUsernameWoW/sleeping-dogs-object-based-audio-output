@@ -15,6 +15,7 @@ namespace telemetry
 		Quiet,         // below the level worth an object
 		NotMono,       // stereo or more channels
 		MultiPosition, // several emitter positions (one sound, many places)
+		Player,        // the local player's own sounds: kept in the bed like the original mix
 	};
 
 	struct Voice

@@ -10,6 +10,8 @@
 // objects, diffuse sound (ambience, reverb, wide spread) stays in the bed, and whatever exceeds the object
 // budget folds into the bed. Here:
 //   - only mono, single-position, point-like (little spread) 3D voices are candidates;
+//   - the player's own voices (the listener is the camera, so they sit ~3 m ahead of it) stay in the bed, where
+//     the game's close-range spread makes them enveloping rather than a point in front (PlayerInBed);
 //   - a brand-new candidate grabs a free slot immediately, so its attack is an object from the first sample;
 //   - once per frame the candidates are ranked by level (gain × signal RMS, current objects count double for
 //     hysteresis) and the budget is redistributed;

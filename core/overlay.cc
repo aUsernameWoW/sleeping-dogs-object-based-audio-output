@@ -87,6 +87,7 @@ namespace overlay
 		case Reason::Spread: return { IM_COL32(150, 150, 150, 150), IM_COL32(200, 200, 200, 180) };
 		case Reason::NotMono:
 		case Reason::MultiPosition: return { IM_COL32(190, 120, 255, 190), IM_COL32(220, 190, 255, 220) };
+		case Reason::Player: return { IM_COL32(90, 230, 120, 200), IM_COL32(190, 255, 200, 230) };
 		case Reason::Quiet:
 		default: return { IM_COL32(110, 110, 110, 110), IM_COL32(140, 140, 140, 130) };
 		}
@@ -101,6 +102,7 @@ namespace overlay
 		case Reason::Quiet: return "quiet";
 		case Reason::NotMono: return "not mono";
 		case Reason::MultiPosition: return "multi-pos";
+		case Reason::Player: return "player";
 		default: return "?";
 		}
 	}
@@ -347,6 +349,7 @@ namespace overlay
 		if (ImGui::SliderFloat("Object distance (m)", &distance, 0.5f, 10.0f, "%.1f", 0)) {
 			gConfig.mObjectDistance = distance;
 		}
+		Checkbox("Player's own sounds stay in the bed (footsteps, foley)", gConfig.mPlayerInBed);
 
 		ImGui::Separator();
 		Checkbox("HUD (F8 by default)", gConfig.mHud);
@@ -365,7 +368,7 @@ namespace overlay
 		if (ImGui::SliderFloat("Radar range (m)", &range, 5.0f, 300.0f, "%.0f", 0)) {
 			gConfig.mHudRadarRange = range;
 		}
-		ImGui::TextDisabled("Cyan = object, yellow = qualifies but waiting, gray = spread/quiet (bed), purple = not mono / several positions.");
+		ImGui::TextDisabled("Cyan = object, yellow = qualifies but waiting, gray = spread/quiet (bed), purple = not mono / several positions, green = player (bed).");
 		ImGui::TextDisabled("Stick up/down = elevation. Radar distance is logarithmic.");
 
 		if (ImGui::Button("Save to SDAtmos.ini", ImVec2(0.0f, 0.0f))) {

@@ -19,11 +19,15 @@ Status (2026-09-22):
   voices are the ones the user expected. Radar not looked at yet.
 - Seen on the HUD: some NPC voices are positioned at the NPC's feet (the game object position Wwise gets is
   probably the character root, not the head). Not investigated yet.
+- 2026-09-23: the user heard Wei Shen's own footsteps as a sharp point ~3 m ahead, slightly left (the
+  over-the-shoulder camera). His voices are now identified by game object and kept in the bed
+  (`PlayerInBed`, HUD green); awaiting the in-game check that the log shows "player audio entity ...".
 
 ## Files
 
 - `dllmain.cc` — config, log, `wwise::Install()` from DllMain (before the game initializes Wwise).
 - `core/wwise.hh` — Wwise 2012.2 struct layouts/offsets from the legacy PDB.
+- `core/game.hh` — the game (UFG) side: AudioEntity/ActorAudioComponent offsets, the player's name hash.
 - `core/wwise_hooks.*` — signatures + hooks: `CAkSinkXAudio2::Init/PassData/PassSilence`,
   `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer`; voice snapshot logging.
 - `core/objects.*` — voice router: which voices become objects, sample capture, bed/object crossfades,
@@ -65,6 +69,12 @@ Status (2026-09-22):
   bed (constant power between adjacent bed speakers).
 - Object position = Wwise's direction on a sphere of `Distance` m (default 2): distance attenuation is already
   in the gain.
+- **The player's own voices stay in the bed** (`PlayerInBed`, default on). With the listener at the camera his
+  footsteps/foley sit 2.6-4 m ahead, 20-30° below, a few degrees left; as objects they collapse to a precise
+  point in front of the viewer (the soundbar can't render "below"), while the bed keeps the game's close-range
+  spread (FL/FR + SL/SR), i.e. the original mix. Industry practice agrees: player sounds are listener-relative
+  (2D/spread), objects are for things that move around the listener. Identification is by game object, not
+  position (see below), so NPCs in melee range are unaffected.
 - **Runtime settings are atomics in `gConfig`** (objects on/off, max objects, distance, HUD options): read by the
   audio thread, written by the hotkey thread and the menu. Objects on/off and lowering the limit crossfade the
   affected objects back into the bed first (`gTarget` drops at once, `gBudget` only after the fades). Dynamic
@@ -122,6 +132,24 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
   The listener is the camera, so the player's own sounds sit at r≈3.8 m, phi≈-23°.
 - `CAkPBI` +0x173 bits 0-1 = panner type (0 = 2D). Layouts in `core/wwise.hh`.
 
+## How the game feeds Wwise (legacy addresses, SDmodding SDK names)
+
+- **Game object ID = `UFG::AudioEntity*`**: `AudioEntity::Init` (0x140146a50) calls `RegisterGameObj(this,
+  name, 1)`; the name goes only to the (absent) profiler. `AudioEntity::m_name` (+0x18) is the qSymbol of the
+  owning SimObject for actor components. `UFG::ActorAudioComponent` (0x230 bytes; SimComponent 0x40 +
+  AudioEntity base at +0x40) plays footsteps, voice and fight impacts on its own entity and allocates a second
+  `AudioEntity` (`m_SFXEntity`, +0x198, named "<name>__SFX") in `CheckInitialize` (0x140597c50) when the
+  character is within 65 m (300 m for the player, `m_isPlayer` = +0x229 bit 3).
+- **Local player**: SimObject named "PlayerOne_Havok", qSymbol 0x90ECB5FF (CRC-32 poly 0x04C11DB7, init -1, no
+  final xor; SDK `sim/localplayer.hh`). Seen in logs as two game objects: the component (footsteps, gain
+  0.249, r 2.6-3.1 m, phi -24..-31°) and the SFX entity (quiet foley on another bus, dryMix 0.63).
+- **Listener** (`UFG::AudioListener`, singleton `sm_pInstance` RVA 0x2175E30; `Update` at 0x14014d410):
+  orientation is always the camera's; position is the camera when `m_positionListenerAtCamera` (+0x81, default
+  1) else the local player's transform, both lerped 0.2/frame. Script methods
+  `audio_set_listener_at_player/camera` and `audio_lock/unlock_listener_position` flip these, so the game
+  already supports the "attenuation from the player, panning from the camera" hybrid (untried from the mod).
+  `Audio3DListener::Update` pushes the matrix through `AK::SoundEngine::SetListenerPosition`.
+
 ## Plan
 
 1. Standalone test — **passed**.
@@ -130,7 +158,9 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
 4. Dynamic objects — built, awaiting in-game test. Watch: object loudness vs original (objects skip bus FX,
    e.g. a master limiter or slow-motion filters on buses), audible jumps on promotion/demotion, activation
    failures, whether 20 objects are enough in fights.
-5. Next: detailed listening session (A/B with F9), NPC voice height (feet vs head), radar check.
+5. Next: confirm the player-entity detection in-game (log line + green HUD markers on Wei), detailed listening
+   session (A/B with F9), NPC voice height (feet vs head), radar check. Possible experiment: flip the game's
+   own `m_positionListenerAtCamera` to hear the listener-at-player hybrid.
 6. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
    gunshots/vehicles by sound ID), maybe a ReShade overlay showing objects.
 

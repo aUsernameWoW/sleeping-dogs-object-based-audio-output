@@ -21,6 +21,11 @@ struct Config
 	// distance attenuation, only the direction is new information.
 	std::atomic<float> mObjectDistance{ 2.0f };
 
+	// The Wwise listener is the camera, so the player's own footsteps/foley sit ~3 m ahead of it. As dynamic
+	// objects they become a sharp point in front of the viewer; in the bed they get the game's own close-range
+	// spread (front + side pairs), which is what the original mix did.
+	std::atomic<bool> mPlayerInBed{ true };
+
 	// HUD drawn over the game through ReShade (needs ReShade with add-on support).
 	std::atomic<bool> mHud{ false };
 	std::atomic<bool> mHudRadar{ true };

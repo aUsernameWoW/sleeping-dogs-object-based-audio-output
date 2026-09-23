@@ -4,7 +4,10 @@
 #include <bit>
 #include <cmath>
 
+#include <Windows.h>
+
 #include "config.hh"
+#include "game.hh"
 #include "log.hh"
 
 namespace objects
@@ -104,6 +107,55 @@ namespace objects
 		v.mRoleSince = gFrame;
 	}
 
+	// ---- The player's own game objects ----
+
+	// Wwise game object IDs are addresses of the game's AudioEntity objects (see game.hh). The player's actor
+	// component is found by its SimObject name; its second ("__SFX") entity by the pointer the component holds.
+	static uint64_t gPlayerEntity = 0;
+	static uint64_t gPlayerSfxEntity = 0;
+
+	// Reads the entity's name and, for the player's component, its SFX entity pointer. The game frees the SFX
+	// entity right after unregistering it while a last buffer of its voices can still render, and the ID isn't
+	// guaranteed to be an entity at all, so the reads are SEH-guarded (hence no C++ objects in this function).
+	static bool ReadEntity(uint64_t entity, uint32_t& nameUID, uint64_t& sfxEntity)
+	{
+		__try {
+			nameUID = *reinterpret_cast<const uint32_t*>(entity + game::audio_entity::kName);
+			sfxEntity = nameUID == game::kPlayerNameUID
+				? *reinterpret_cast<const uint64_t*>(entity - game::actor_audio::kEntityBase + game::actor_audio::kSfxEntity)
+				: 0;
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+	}
+
+	static bool IsPlayerVoice(const void* pbi)
+	{
+		const void* gameObj = At<void*>(pbi, pbi::kGameObj);
+		const uint64_t entity = gameObj ? At<uint64_t>(gameObj, game_obj::kID) : 0;
+		if (entity < 0x10000 || entity >= 0x00007FFFFFFF0000ull) {
+			// Not a user-mode pointer: the game also uses small numbers for global (2D) objects.
+			return false;
+		}
+		if (entity == gPlayerSfxEntity) {
+			return true;
+		}
+		uint32_t name = 0;
+		uint64_t sfx = 0;
+		if (!ReadEntity(entity, name, sfx) || name != game::kPlayerNameUID) {
+			return false;
+		}
+		if (entity != gPlayerEntity || sfx != gPlayerSfxEntity) {
+			// Re-created after a load, or the component re-initialized (new SFX entity).
+			LOG("objects: player audio entity %llX, SFX entity %llX", entity, sfx);
+			gPlayerEntity = entity;
+			gPlayerSfxEntity = sfx;
+		}
+		return true;
+	}
+
 	static float Norm7(const float* gains)
 	{
 		// Index 7 is LFE (Wwise's internal order: FL FR C BL BR SL SR LFE); objects carry no LFE send.
@@ -158,7 +210,10 @@ namespace objects
 		const float level = gainNext * downstream * std::sqrt(energy / spatial::kBlockFrames);
 
 		Reason reason = Reason::Candidate;
-		if (rayCount > 1) {
+		if (gConfig.mPlayerInBed.load(std::memory_order_relaxed) && IsPlayerVoice(pbi)) {
+			reason = Reason::Player;
+		}
+		else if (rayCount > 1) {
 			reason = Reason::MultiPosition;
 		}
 		else if (!mono) {

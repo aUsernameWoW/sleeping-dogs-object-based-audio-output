@@ -38,6 +38,12 @@ namespace config
 		"; Radius (meters) objects are placed at; Wwise already applied distance attenuation.\n"
 		"Distance = 2.0\n"
 		"\n"
+		"; 沈威自己的声音（脚步、衣物、格斗动作）留在声道床里，按原版的方式混音。\n"
+		"; 游戏的听者在摄像机上，沈威在它前方约 3 米；做成对象会变成画面前方一个很准的点。\n"
+		"; Keep the player's own sounds (footsteps, foley) in the bed as the original mix does; the listener is\n"
+		"; the camera, so as objects they'd be a sharp point ~3 m ahead of the viewer.\n"
+		"PlayerInBed = 1\n"
+		"\n"
 		"[Overlay]\n"
 		"; 需要 ReShade（支持插件的版本）。设置也可以在 ReShade 菜单的 SDAtmos 标签页里改。\n"
 		"; Needs ReShade with add-on support; everything here is also in the SDAtmos tab of the ReShade menu.\n"
@@ -114,7 +120,8 @@ namespace config
 		gConfig.mObjects = ReadBool(L"Objects", L"Enabled", gConfig.mObjects);
 		gConfig.mMaxObjects = ReadInt(L"Objects", L"MaxObjects", gConfig.mMaxObjects);
 		gConfig.mObjectDistance = ReadFloat(L"Objects", L"Distance", gConfig.mObjectDistance);
-		gConfig.mHud = ReadBool(L"Overlay", L"Hud", gConfig.mHud);
+		gConfig.mPlayerInBed = ReadBool(L"Objects", L"PlayerInBed", gConfig.mPlayerInBed);
+		gConfig.mHud =ReadBool(L"Overlay", L"Hud", gConfig.mHud);
 		gConfig.mHudRadar = ReadBool(L"Overlay", L"Radar", gConfig.mHudRadar);
 		gConfig.mHudMarkers = ReadBool(L"Overlay", L"Markers", gConfig.mHudMarkers);
 		gConfig.mHudLabels = ReadBool(L"Overlay", L"Labels", gConfig.mHudLabels);
@@ -215,6 +222,7 @@ namespace config
 		SetValue(text, "Objects", "Enabled", gConfig.mObjects ? "1" : "0");
 		SetValue(text, "Objects", "MaxObjects", std::to_string(gConfig.mMaxObjects.load()));
 		SetValue(text, "Objects", "Distance", FormatFloat(gConfig.mObjectDistance));
+		SetValue(text, "Objects", "PlayerInBed", gConfig.mPlayerInBed ? "1" : "0");
 		SetValue(text, "Overlay", "Hud", gConfig.mHud ? "1" : "0");
 		SetValue(text, "Overlay", "Radar", gConfig.mHudRadar ? "1" : "0");
 		SetValue(text, "Overlay", "Markers", gConfig.mHudMarkers ? "1" : "0");
