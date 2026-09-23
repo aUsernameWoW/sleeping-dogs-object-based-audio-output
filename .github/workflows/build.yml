@@ -1,6 +1,6 @@
 # Builds SDAtmos.asi and runs the automated tests, the way tools\build.ps1 -Test does in the modding
 # workspace. The .vcxproj reads its third-party headers/libs from ..\..\reference, so the job recreates that
-# layout: this repo in mods\SDAtmos, ReShade in reference\reshade, SPatch (MinHook build) in reference\SPatch.
+# layout: this repo in mods\SDAtmos, ReShade in reference\reshade, MinHook in reference\minhook.
 # Every push to main that passes is then published as a prerelease.
 name: Build
 
@@ -23,8 +23,8 @@ env:
   # The commits reference\ is built from; together they key the reference\ cache.
   # Keep in step with reference\reshade: ReShade only accepts add-ons built against its own ImGui version.
   RESHADE_REF: 18deaa52de0c425a78b329e9cb3c497281cd00ec # v6.8.0
-  # external\MinHook.h/.lib: SDmodding's reduced MinHook fork, x64 /MT.
-  SPATCH_REF: 9227eee1aa7b86990780fb49906cabdf8a9a4f78
+  # Upstream MinHook, compiled from source into the .asi.
+  MINHOOK_REF: c3fcafdc10146beb5919319d0683e44e3c30d537 # v1.3.4
 
 jobs:
   build:
@@ -45,13 +45,13 @@ jobs:
           path: mods/SDAtmos
           persist-credentials: false
 
-      # reference\ only changes when a pin moves, so a hit skips the three checkouts below.
+      # reference\ only changes when a pin moves, so a hit skips the checkouts below.
       - name: Restore reference\ from cache
         id: reference
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: reference
-          key: reference-reshade-${{ env.RESHADE_REF }}-spatch-${{ env.SPATCH_REF }}
+          key: reference-reshade-${{ env.RESHADE_REF }}-minhook-${{ env.MINHOOK_REF }}
 
       # The add-on API needs only include\ and the ImGui submodule; blob:none fetches just their files.
       - name: Check out ReShade 6.8.0
@@ -72,14 +72,16 @@ jobs:
         working-directory: reference/reshade
         run: git submodule update --init --depth 1 deps/imgui
 
-      - name: Check out SPatch (MinHook build)
+      - name: Check out MinHook 1.3.4
         if: steps.reference.outputs.cache-hit != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: xowny/SPatch
-          ref: ${{ env.SPATCH_REF }}
-          path: reference/SPatch
-          sparse-checkout: external
+          repository: TsudaKageyu/minhook
+          ref: ${{ env.MINHOOK_REF }}
+          path: reference/minhook
+          sparse-checkout: |
+            include
+            src
           filter: blob:none
           persist-credentials: false
 
@@ -164,7 +166,7 @@ jobs:
               echo "::error::$tag already exists for another commit"
               exit 1
             fi
-            gh release upload "$tag" dist/SDAtmos.asi dist/SDAtmos.pdb --clobber
+            gh release upload "$tag" dist/SDAtmos.asi dist/SDAtmos.pdb THIRD-PARTY-NOTICES.md --clobber
             exit 0
           fi
           prev=$(git describe --tags --abbrev=0 --match 'build-*' HEAD 2> /dev/null || true)
@@ -181,5 +183,5 @@ jobs:
               git log -n 10 --format='- %s (%h)'
             fi
           } > notes.md
-          gh release create "$tag" dist/SDAtmos.asi dist/SDAtmos.pdb --prerelease --target "$GITHUB_SHA" \
+          gh release create "$tag" dist/SDAtmos.asi dist/SDAtmos.pdb THIRD-PARTY-NOTICES.md --prerelease --target "$GITHUB_SHA" \
             --title "SDAtmos build $n ($short)" --notes-file notes.md

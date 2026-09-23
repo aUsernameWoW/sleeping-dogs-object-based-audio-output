@@ -410,19 +410,32 @@ namespace wwise
 		if (!target) {
 			return false;
 		}
-		const MH_STATUS status = MH_CreateHook(target, detour, reinterpret_cast<void**>(&original));
+		MH_STATUS status = MH_CreateHook(target, detour, reinterpret_cast<void**>(&original));
+		if (status == MH_OK) {
+			status = MH_EnableHook(target);
+			if (status != MH_OK) {
+				MH_RemoveHook(target);
+				original = nullptr;
+			}
+		}
 		if (status != MH_OK) {
-			LOG("hook: %s: MH_CreateHook failed (%d)", name, status);
+			LOG("hook: %s: %s", name, MH_StatusToString(status));
 			return false;
 		}
 		return true;
 	}
 
-	// The MinHook build shipped with SDmodding (reference\SPatch\external) is a reduced fork: no
-	// MH_Initialize / MH_EnableHook, MH_CreateHook enables the hook immediately, MH_RemoveHook frees the
-	// trampoline. Fine here: we hook from DllMain before any game thread exists.
+	// Each hook is enabled as soon as it's created, so the pairs below can back out a half-installed pair
+	// with MH_RemoveHook (disables, then frees the trampoline). MH_EnableHook suspends the process's other
+	// threads while it patches; from DllMain, before the game has started any, that's cheap. The .asi is
+	// never unloaded, so MH_Uninitialize is never called.
 	void Install()
 	{
+		if (const MH_STATUS status = MH_Initialize(); status != MH_OK) {
+			LOG("hook: MH_Initialize failed (%s), nothing hooked", MH_StatusToString(status));
+			return;
+		}
+
 		uint8_t* sinkInit = scan::FindUnique("CAkSinkXAudio2::Init", kSigSinkInit);
 		uint8_t* passData = scan::FindUnique("CAkSinkXAudio2::PassData", kSigPassData);
 		uint8_t* passSilence = scan::FindUnique("CAkSinkXAudio2::PassSilence", kSigPassSilence);

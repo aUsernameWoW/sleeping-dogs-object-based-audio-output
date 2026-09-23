@@ -43,15 +43,15 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
-    <!-- Relative to this project, so moving the whole dev folder keeps working. MinHook.lib there is x64 /MT. -->
-    <MinHookDir>$(MSBuildThisFileDirectory)..\..\reference\SPatch\external\</MinHookDir>
+    <!-- Relative to this project, so moving the whole dev folder keeps working. -->
+    <MinHookDir>$(MSBuildThisFileDirectory)..\..\reference\minhook\</MinHookDir>
     <ReShadeDir>$(MSBuildThisFileDirectory)..\..\reference\reshade\</ReShadeDir>
   </PropertyGroup>
   <PropertyGroup>
     <TargetName>SDAtmos</TargetName>
     <TargetExt>.asi</TargetExt>
     <IncludePath>$(MSBuildThisFileDirectory);$(IncludePath)</IncludePath>
-    <ExternalIncludePath>$(MinHookDir);$(ReShadeDir)include;$(ReShadeDir)deps\imgui;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(MinHookDir)include;$(ReShadeDir)include;$(ReShadeDir)deps\imgui;$(ExternalIncludePath)</ExternalIncludePath>
     <GenerateManifest>false</GenerateManifest>
     <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)build\obj\$(Configuration)\</IntDir>
@@ -72,7 +72,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableUAC>false</EnableUAC>
-      <AdditionalDependencies>$(MinHookDir)MinHook.lib;ole32.lib;avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ole32.lib;avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -110,6 +110,13 @@
     <ClCompile Include="core\telemetry.cc" />
     <ClCompile Include="core\weather.cc" />
     <ClCompile Include="core\wwise_hooks.cc" />
+  </ItemGroup>
+  <!-- MinHook (upstream, BSD-2) built from source into the .asi with the project's /MT and /GL; its own
+       warnings are its business. hde32.c is x86-only and compiles to nothing on x64, so it's left out. -->
+  <ItemGroup>
+    <ClCompile Include="$(MinHookDir)src\buffer.c;$(MinHookDir)src\hook.c;$(MinHookDir)src\trampoline.c;$(MinHookDir)src\hde\hde64.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core\config.hh" />

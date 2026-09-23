@@ -41,7 +41,8 @@ by pattern or decoded from a RIP-relative operand.
 
 ## Hooking
 
-- MinHook (SDmodding's reduced fork): `MH_CreateHook` creates and enables; `MH_RemoveHook` frees. All hooks
+- MinHook (upstream v1.3.4, built from source): `Hook()` runs `MH_CreateHook` + `MH_EnableHook`;
+  `MH_RemoveHook` disables and frees. All hooks
   are created in `DllMain` before the game runs, so there is no thread-safety concern at install time. Pairs
   that only make sense together (`RunVPL` + `ConsumeBuffer`) are rolled back if one fails.
 - Prefer intercepting where the data already is: the plan to hook `PostEvent`/`SetPosition` was dropped

@@ -74,15 +74,18 @@ Wwise 引擎，改由 `ISpatialAudioClient` 输出：
 Visual Studio 2022（v143），Windows SDK 10.0.26100。项目需要放在工作区的 `mods\SDAtmos`，工作区里还要有：
 
 - `reference\reshade`：ReShade v6.8.0 源码，并初始化 `deps\imgui` 子模块。
-- `reference\SPatch\external`：SDmodding 的 MinHook 构建（`MinHook.h` / `MinHook.lib`）。
+- `reference\minhook`：[MinHook](https://github.com/TsudaKageyu/minhook) v1.3.4 源码（随项目一起编译）。
 
 GitHub Actions 会对推送和 PR 按同样的布局编译并运行自动测试，依赖的确切版本见 `.github/workflows/build.yml`。
 推送到 `main` 且测试通过的构建会发布为预发布版 `build-<N>`，附带 `SDAtmos.asi` 和 `.pdb`。
 
 ### 致谢
 
-- [SDmodding](https://github.com/SDmodding)：旧版 PDB、SDK 和 MinHook 构建。
+- [SDmodding](https://github.com/SDmodding)：旧版 PDB 和 SDK。
+- [MinHook](https://github.com/TsudaKageyu/minhook)。
 - [ReShade](https://github.com/crosire/reshade) 的插件 API 和 Dear ImGui。
+
+编译进 `SDAtmos.asi` 的第三方代码及其许可证见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 与 Square Enix、United Front Games、Audiokinetic、Dolby、DTS、Microsoft 均无关联。
 
@@ -168,7 +171,8 @@ Visual Studio 2022 (v143), Windows SDK 10.0.26100. The project expects to sit at
 workspace that also has:
 
 - `reference\reshade`: ReShade v6.8.0 source, with the `deps\imgui` submodule initialized.
-- `reference\SPatch\external`: `MinHook.h` / `MinHook.lib` from SDmodding's MinHook build.
+- `reference\minhook`: [MinHook](https://github.com/TsudaKageyu/minhook) v1.3.4 source (compiled with the
+  project).
 
 GitHub Actions builds pushes and pull requests in that same layout and runs the automated tests;
 `.github/workflows/build.yml` lists the exact dependency versions. Builds of `main` that pass are published
@@ -176,7 +180,11 @@ as prereleases `build-<N>` with `SDAtmos.asi` and its `.pdb`.
 
 ### Credits
 
-- [SDmodding](https://github.com/SDmodding): the legacy build's PDB and SDK, and the MinHook build.
+- [SDmodding](https://github.com/SDmodding): the legacy build's PDB and SDK.
+- [MinHook](https://github.com/TsudaKageyu/minhook).
 - [ReShade](https://github.com/crosire/reshade) add-on API and Dear ImGui.
+
+The third-party code compiled into `SDAtmos.asi` and its licenses are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 Not affiliated with Square Enix, United Front Games, Audiokinetic, Dolby, DTS or Microsoft.

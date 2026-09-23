@@ -124,9 +124,9 @@ markers sit on their sources. The radar needs no FOV at all.
 **`reshade_overlay` is registered only while the HUD or the A/B banner is visible**, because a registered
 overlay makes ReShade run its ImGui pass every frame.
 
-**MinHook is SDmodding's reduced fork** (`reference\SPatch\external`): `MH_CreateHook` enables the hook
-immediately, there is no `MH_Initialize`/`MH_EnableHook`. Fine here since we hook from `DllMain` before any
-game thread exists.
+**MinHook is upstream v1.3.4** (`reference\minhook`), compiled from source into the `.asi`. Every hook is
+created and enabled in one go from `DllMain`, before the game has started its threads, so `MH_EnableHook`'s
+thread suspension has next to nothing to do.
 
 **Characters' sounds are lifted off the ground at the game→Wwise boundary.** Their audio entities follow
 the character root (feet), which the 7.1 bed never revealed (no height) but objects do. A hook on

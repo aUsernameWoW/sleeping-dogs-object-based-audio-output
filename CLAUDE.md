@@ -93,9 +93,10 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   height DSP maps, carve energy, decorrelator), `tests/spatial_orbit_manual.cc` (standalone ISAC check:
   `--probe` prints limits, otherwise plays a circling object).
 - `.github/workflows/build.yml` — CI on GitHub Actions (`windows-2025-vs2026`): recreates the workspace
-  layout from pinned commits (`env:` `RESHADE_REF` = v6.8.0 + `deps/imgui`, `SPATCH_REF` for MinHook; sparse
+  layout from pinned commits (`env:` `RESHADE_REF` = v6.8.0 + `deps/imgui`, `MINHOOK_REF` = v1.3.4; sparse
   checkouts, cached under the pins), builds Release x64 with `-warnAsError`, runs `tests\*_test.cc`, uploads
-  `.asi` + `.pdb`; on `main` a second job publishes them as prerelease `build-<N>` (N = commit count). Bump
+  `.asi` + `.pdb`; on `main` a second job publishes them with `THIRD-PARTY-NOTICES.md` (licenses of the
+  code compiled in; keep it in step with the dependencies) as prerelease `build-<N>` (N = commit count). Bump
   the pins when `reference\` moves; `.github/dependabot.yml` proposes updates for the SHA-pinned actions
   monthly.
 
@@ -180,8 +181,10 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   they work without ReShade.
 - `config::Save` edits the ini byte-wise: `WritePrivateProfileString` treats BOM-less files as ANSI and would
   mangle the UTF-8 comments.
-- MinHook is SDmodding's reduced fork (`reference\SPatch\external`): `MH_CreateHook` enables immediately,
-  there is no `MH_Initialize`/`MH_EnableHook`.
+- MinHook is upstream v1.3.4 (`reference\minhook`), compiled from source into the `.asi` (warnings off for
+  its files). `Hook()` creates and enables each hook at once, so a half-installed pair is backed out with
+  `MH_RemoveHook`. Until 2026-09-23 it linked SDmodding's reduced fork (`reference\SPatch\external`, a
+  prebuilt `.lib` without `MH_Initialize`/`MH_EnableHook`); dropped for an auditable, buildable dependency.
 - The installed exe differs from the legacy one only in rel32/RIP displacement bytes inside these functions;
   data addresses (e.g. `g_pipelineCoreFrequency` RVA 0x20F71F4) are identical.
 
