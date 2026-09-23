@@ -167,3 +167,4 @@ overwritten by deploys):
 | `Overlay.*` | | HUD on/off (F8), radar, markers, labels, bed voices, marker FOV, radar range, hotkey codes (F9 objects, F7 heights, F8 HUD). |
 | `Debug.Logging` | 1 | Write `SDAtmos.log`. |
 | `Debug.VoiceLog` | 1 | Periodic 3D voice snapshots in the log. |
+| `Debug.ToggleRainKey` | 0x75 (F6) | Debug hotkey: force the game's weather to rain / clear (`core/weather.*`); 0 = off. |

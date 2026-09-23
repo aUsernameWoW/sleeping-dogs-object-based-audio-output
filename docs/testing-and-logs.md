@@ -45,7 +45,9 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
    on-screen markers at each voice's projected direction, a status line (objects on/off, N/limit, voice
    counts, latency). Colors: cyan = object (label = slot number), yellow = qualifies but waiting, gray =
    spread/quiet (bed), purple = not mono / multi-position, green = player (bed), orange = bus effects (bed).
-4. **F9** toggles objects (A/B), **F7** the height bed. A banner confirms it even with the HUD off.
+4. **F9** toggles objects (A/B), **F7** the height bed. A banner confirms it even with the HUD off. **F6**
+   (debug, `Debug.ToggleRainKey`) forces the game's weather to full rain / clear and locks the randomizer,
+   through `UFG::TimeOfDayManager` as the `weather_set_amount` / `weather_lock` script atomics do.
 5. ReShade menu → SDAtmos tab: stream status, live sliders/checkboxes, the voice table (role, azimuth,
    elevation, distance, level, sound ID, slot), "Save to SDAtmos.ini".
 6. Walk, sprint (L-Shift), vault over things, start a fight, drive: the player's sounds should be green
@@ -77,10 +79,14 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
   folded into bed, peak dBFS` — `failed`/`folded` > 0 means Windows ran out of objects (another app?).
 - `spatial: stream stopped (0x...)`, then `stream started` again when it reopened (device change, spatial
   format toggled).
-- `heights: bus <id> (<name>, mask 0x..., parent <ptr>) carves as sky|ambience|reverb at <dB>` once per
-  bus ID; `heights: on|off; bus transfers carved: S sky, A ambience, R reverb; peak dBFS TFL TFR TBL TBR:
-  ...` every 10 s. `spatial: stream started ... bed [... TFL TFR TBL TBR] (12 ch)` says the stream has the
-  height channels. See height-bed.md.
+- `heights: bus <id> (<name>) -> <parent id> (<name>), mask 0x...: none|sky tier|ambience tier|reverb tier`
+  once per bus ID at its first transfer (every bus, so the log shows the runtime bus tree);
+  `heights: on|off; bus transfers carved: S sky, A ambience, R reverb; peak dBFS TFL TFR TBL TBR: ...`
+  every 10 s. `spatial: stream started ... bed [... TFL TFR TBL TBR] (12 ch)` says the stream has the
+  height channels. Voice snapshot lines end with `| bus a>b>c`: the voice's dry bus and its parents. See
+  height-bed.md.
+- `weather: rain ON|OFF (state ..., random interval ..., chance of precipitation ...)` from the F6 debug
+  hotkey.
 - `hotkey: dynamic objects ON/OFF`, `hotkey: height bed ON/OFF`, `hotkey: HUD on/off`, `menu: settings saved`.
 
 ## Baselines (user's system, 2026-09-23)

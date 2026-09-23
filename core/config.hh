@@ -72,6 +72,7 @@ struct Config
 	int mToggleObjectsKey = 0x78; // VK_F9
 	int mToggleHudKey = 0x77;     // VK_F8
 	int mToggleHeightsKey = 0x76; // VK_F7
+	int mToggleRainKey = 0x75;    // VK_F6: debug, forces the game's weather to rain / clear
 
 	// Write SDAtmos.log next to the .asi.
 	bool mLogging = true;

@@ -36,9 +36,13 @@ Status (2026-09-22):
   EQ themselves instead.
 - 2026-09-23, later: **height bed** built (`docs\height-bed.md`): the bed is 7.1.4, the four top channels are
   fed from the ambient/weather/birds buses and the reverb aux buses at their bus→parent transfer, decorrelated.
-  Builds, `heights_test` passes, deployed; **awaiting the in-game check** (log should show `bed [... TFL TFR
-  TBL TBR] (12 ch)`, `heights: bus ... carves as ...` lines; F7 A/B by ear: rain/thunder overhead, nothing
-  else moving, loudness unchanged).
+  First in-game hour: stream has the 12-channel bed, the reverb tier carves constantly (peaks -13..-40
+  dBFS), but **the ambience tier never fired** (`0 ambience` all session): the `ambient` bus 77978275 never
+  passed the transfer hook, so the runtime routing of ambience differs from the Init.bnk tree as parsed.
+  Diagnostics added: every bus is logged once at its first transfer (`heights: bus <id> (<name>) -> <parent>
+  ..., mask ..., tier`), and voice snapshots print the dry bus chain (`| bus a>b>c`). No rain fell in that
+  hour either, so a debug hotkey **F6** forces rain via `UFG::TimeOfDayManager` (`core/weather.*`).
+  **Next:** read the new log, fix the ambience bus IDs, then F7 A/B in rain.
 
 Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
 voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
@@ -63,6 +67,9 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   tab (settings, stream status, voice table, save to ini) and HUD (radar, on-screen markers, A/B banner).
 - `core/spatial_out.*` — ISAC stream (bed incl. heights + dynamic objects), SPSC ring with per-block object
   metadata, render thread, object activation/reuse/release, fold-into-bed fallback, reopen on device loss.
+- `core/weather.*` — debug: F6 forces rain/clear through the game's `UFG::TimeOfDayManager` (found via the
+  `weather_set_amount` script atomic's call to `GetInstance`; state/target/next at +0x34/38/3C, random
+  interval +0x40 zeroed to lock, as `weather_lock` does).
 - `core/scan.*` — unique pattern search in the exe's `.text`, RIP-relative decoding.
 - `core/config.*`, `core/log.*` — `SDAtmos.ini` / `SDAtmos.log`.
 - `tests/load_test.cc` (automated: loads into a Wwise-less process), `tests/config_save_test.cc` (automated:

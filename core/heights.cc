@@ -45,8 +45,10 @@ namespace heights
 	static Stats gStats;
 	static ULONGLONG gLastStats = 0;
 
-	// Buses seen, so each is logged once when first carved (bus pointers recycle; the ID is what matters).
-	constexpr int kMaxSeen = 64;
+	// Buses seen, so each is logged once with its parent and tier (bus pointers recycle; the ID is what
+	// matters). Every bus is logged, not just the carved ones: the log then shows the runtime bus tree, which
+	// is how a wrong bus ID in the ini gets found.
+	constexpr int kMaxSeen = 256;
 	static uint32_t gSeen[kMaxSeen];
 	static int gSeenCount = 0;
 
@@ -73,6 +75,11 @@ namespace heights
 		case 3995202064: return "master_hdr";
 		case 3627036714: return "master_dialog";
 		case 1900298039: return "master_music";
+		case 393239870: return "sfx";
+		case 2385628198: return "footsteps";
+		case 1287408361: return "gunshot";
+		case 3444197610: return "root";
+		case 0: return "-";
 		default: return "?";
 		}
 	}
@@ -152,6 +159,15 @@ namespace heights
 		}
 		const uint32_t busID = At<uint32_t>(vpl, vpl::kBusID);
 		const Tier tier = Classify(vpl, busID);
+		if (!Listed(busID, gSeen, gSeenCount)) {
+			if (gSeenCount < kMaxSeen) {
+				gSeen[gSeenCount++] = busID;
+			}
+			const void* parent = At<void*>(vpl, vpl::kParent);
+			const uint32_t parentID = parent ? At<uint32_t>(parent, vpl::kBusID) : 0;
+			LOG("heights: bus %u (%s) -> %s%u (%s), mask 0x%X: %s%s", busID, BusName(busID), parent ? "" : "final mix ",
+				parentID, BusName(parentID), buffer->buffer.uChannelMask, TierName(tier), tier == Tier::None ? "" : " tier");
+		}
 		if (tier == Tier::None) {
 			return;
 		}
@@ -162,14 +178,6 @@ namespace heights
 		FloorMap map;
 		if (!BuildFloorMap(buffer->buffer.uChannelMask, map)) {
 			return;
-		}
-
-		if (!Listed(busID, gSeen, gSeenCount)) {
-			if (gSeenCount < kMaxSeen) {
-				gSeen[gSeenCount++] = busID;
-			}
-			LOG("heights: bus %u (%s, mask 0x%X, parent %p) carves as %s at %.1f dB", busID, BusName(busID),
-				buffer->buffer.uChannelMask, At<void*>(vpl, vpl::kParent), TierName(tier), 20.0f * std::log10(share));
 		}
 
 		// Same volume ramp CAkMixer::Mix applies, times the chain to the output, times the share and the

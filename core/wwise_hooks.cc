@@ -166,19 +166,27 @@ namespace wwise
 			const int slot = objects::SlotOf(pbi);
 			char role[16];
 			snprintf(role, sizeof(role), slot >= 0 ? "obj%d" : "bed", slot);
+
+			// The voice's dry bus and its parents up to the final mix, by bus ID (the runtime bus tree).
+			char chain[128] = "";
+			size_t used = 0;
+			for (const void* bus = mixBus; bus && used < sizeof(chain) - 12; bus = At<void*>(bus, vpl::kParent)) {
+				used += static_cast<size_t>(snprintf(chain + used, sizeof(chain) - used, "%s%u", used ? ">" : "", At<uint32_t>(bus, vpl::kBusID)));
+			}
+
 			constexpr float kDeg = 57.2957795f;
 			if (rays && rayCount) {
 				LOG("  voice %-5s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=%u r=%.1f theta=%.0f phi=%.0f dryMix=%.2f | "
-					"gain=%.3f down=%.2f rms=%.3f | FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f",
+					"gain=%.3f down=%.2f rms=%.3f | FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f | bus %s",
 					role, soundID, objID, pannerBits & 3, (pannerBits >> 2) & 3, channels, rayCount, rays[0].r,
 					rays[0].theta * kDeg, rays[0].phi * kDeg, rays[0].fDryMixGain, std::sqrt(power),
-					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]);
+					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], chain);
 			}
 			else {
 				LOG("  voice %-5s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=0 | gain=%.3f down=%.2f rms=%.3f | "
-					"FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f",
+					"FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f | bus %s",
 					role, soundID, objID, pannerBits & 3, (pannerBits >> 2) & 3, channels, std::sqrt(power),
-					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]);
+					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], chain);
 			}
 		}
 

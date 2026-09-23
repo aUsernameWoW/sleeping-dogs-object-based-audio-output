@@ -113,7 +113,11 @@ namespace config
 		"\n"
 		"; 每隔几秒把正在播放的 3D 声音（位置、音量、走床还是对象）写进日志。\n"
 		"; Periodically log the 3D voices Wwise is mixing.\n"
-		"VoiceLog = 1\n";
+		"VoiceLog = 1\n"
+		"\n"
+		"; 调试热键：强制游戏下雨/放晴（测试高度声道的天气档用），0 = 关。0x75 = F6。\n"
+		"; Debug hotkey: force the game's weather to rain / clear (to test the height bed's sky tier); 0 = off.\n"
+		"ToggleRainKey = 0x75\n";
 
 	static std::wstring ReadString(const wchar_t* section, const wchar_t* key)
 	{
@@ -211,6 +215,7 @@ namespace config
 		gConfig.mToggleHeightsKey = ReadInt(L"Overlay", L"ToggleHeightsKey", gConfig.mToggleHeightsKey);
 		gConfig.mLogging = ReadBool(L"Debug", L"Logging", gConfig.mLogging);
 		gConfig.mVoiceLog = ReadBool(L"Debug", L"VoiceLog", gConfig.mVoiceLog);
+		gConfig.mToggleRainKey = ReadInt(L"Debug", L"ToggleRainKey", gConfig.mToggleRainKey);
 
 		if (gConfig.mMaxObjects < 0) {
 			gConfig.mMaxObjects = 0;

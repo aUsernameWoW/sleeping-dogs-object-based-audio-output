@@ -92,7 +92,12 @@ means none). The ReShade tab has the three sliders; the HUD status line shows `h
 - `hook: height bed hooks ready, heights on at start` — both bus-transfer signatures found.
 - `spatial: stream started ... bed [FL FR C LFE SL SR BL BR TFL TFR TBL TBR] (12 ch)` — the stream has the
   heights; otherwise `spatial: this format's bed has no height channels [...]`.
-- `heights: bus 317282339 (weather, mask 0x63F, parent ...) carves as sky at -3.0 dB` — once per bus ID.
+- `heights: bus 317282339 (weather) -> 2276207995 (?), mask 0x63F: sky tier` — once per bus ID at its
+  first transfer, for every bus (tier `none` included), which makes the log a dump of the runtime bus tree.
+  First in-game session (2026-09-23): the reverb tier fired all the time, the ambience tier never: the
+  `ambient` bus never transferred. Whatever ambience routes through at runtime shows up in these lines and
+  in the voice snapshots' `| bus a>b>c` chains; fix `AmbienceBuses` from there.
+- The F6 debug hotkey forces rain (`core/weather.*`), since the game's random weather may not oblige.
 - `heights: on; bus transfers carved: S sky, A ambience, R reverb; peak dBFS TFL TFR TBL TBR: ...` every
   10 s.
 

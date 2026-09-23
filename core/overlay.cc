@@ -9,6 +9,7 @@
 #include "log.hh"
 #include "spatial_out.hh"
 #include "telemetry.hh"
+#include "weather.hh"
 
 // Must match ReShade's own Dear ImGui build (see deps/ImGui.props in ReShade).
 #define ImTextureID ImU64
@@ -32,7 +33,7 @@ namespace overlay
 
 	static bool gHudRegistered = false;
 	static std::atomic<ULONGLONG> gBannerUntil{ 0 }; // A/B toggle banner, shown even with the HUD off
-	static std::atomic<int> gBannerKind{ 0 };        // 0 = objects toggled, 1 = heights toggled
+	static std::atomic<int> gBannerKind{ 0 };        // 0 = objects toggled, 1 = heights toggled, 2 = rain toggled
 	static telemetry::Frame gFrame;                  // render thread only
 
 	// ---- Hotkeys ----
@@ -51,12 +52,21 @@ namespace overlay
 		bool objectsDown = false;
 		bool hudDown = false;
 		bool heightsDown = false;
+		bool rainDown = false;
 		for (;;) {
 			Sleep(25);
 			const bool foreground = GameIsForeground();
 			const bool objectsNow = foreground && gConfig.mToggleObjectsKey && (GetAsyncKeyState(gConfig.mToggleObjectsKey) & 0x8000);
 			const bool hudNow = foreground && gConfig.mToggleHudKey && (GetAsyncKeyState(gConfig.mToggleHudKey) & 0x8000);
 			const bool heightsNow = foreground && gConfig.mToggleHeightsKey && (GetAsyncKeyState(gConfig.mToggleHeightsKey) & 0x8000);
+			const bool rainNow = foreground && gConfig.mToggleRainKey && (GetAsyncKeyState(gConfig.mToggleRainKey) & 0x8000);
+
+			if (rainNow && !rainDown) {
+				const bool on = weather::ToggleRain();
+				gBannerKind = 2;
+				gBannerUntil = GetTickCount64() + kBannerMs;
+				LOG("hotkey: rain %s", on ? "ON" : "OFF");
+			}
 
 			if (objectsNow && !objectsDown) {
 				const bool on = !gConfig.mObjects.load();
@@ -80,6 +90,7 @@ namespace overlay
 			objectsDown = objectsNow;
 			hudDown = hudNow;
 			heightsDown = heightsNow;
+			rainDown = rainNow;
 		}
 	}
 
@@ -275,9 +286,10 @@ namespace overlay
 
 	static void DrawBanner(ImDrawList* draw, const ImVec2& display, float scale)
 	{
-		const bool heights = gBannerKind.load() == 1;
-		const bool on = heights ? gConfig.mHeights.load() : gConfig.mObjects.load();
-		const char* text = heights ? (on ? "SDAtmos: height bed ON" : "SDAtmos: height bed OFF (floor only)")
+		const int kind = gBannerKind.load();
+		const bool on = kind == 2 ? weather::IsRaining() : kind == 1 ? gConfig.mHeights.load() : gConfig.mObjects.load();
+		const char* text = kind == 2 ? (on ? "SDAtmos: rain ON (debug)" : "SDAtmos: rain OFF (debug)")
+			: kind == 1 ? (on ? "SDAtmos: height bed ON" : "SDAtmos: height bed OFF (floor only)")
 			: (on ? "SDAtmos: dynamic objects ON" : "SDAtmos: objects OFF (7.1 bed only)");
 		ImFont* font = ImGui::GetFont();
 		// ImFont::CalcTextSizeA isn't in ReShade's function table; text width scales linearly with font size.
@@ -465,8 +477,8 @@ namespace overlay
 		if (thread) {
 			CloseHandle(thread);
 		}
-		LOG("overlay: hotkeys 0x%X = objects on/off, 0x%X = HUD, 0x%X = height bed on/off", gConfig.mToggleObjectsKey,
-			gConfig.mToggleHudKey, gConfig.mToggleHeightsKey);
+		LOG("overlay: hotkeys 0x%X = objects on/off, 0x%X = HUD, 0x%X = height bed on/off, 0x%X = rain on/off (debug)",
+			gConfig.mToggleObjectsKey, gConfig.mToggleHudKey, gConfig.mToggleHeightsKey, gConfig.mToggleRainKey);
 
 		// ReShade (dxgi.dll) is a static import of the exe, so it's loaded before the ASI loader runs us.
 		if (!reshade::register_addon(self)) {

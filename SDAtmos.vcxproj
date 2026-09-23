@@ -107,6 +107,7 @@
     <ClCompile Include="core\scan.cc" />
     <ClCompile Include="core\spatial_out.cc" />
     <ClCompile Include="core\telemetry.cc" />
+    <ClCompile Include="core\weather.cc" />
     <ClCompile Include="core\wwise_hooks.cc" />
   </ItemGroup>
   <ItemGroup>
@@ -120,6 +121,7 @@
     <ClInclude Include="core\scan.hh" />
     <ClInclude Include="core\spatial_out.hh" />
     <ClInclude Include="core\telemetry.hh" />
+    <ClInclude Include="core\weather.hh" />
     <ClInclude Include="core\wwise.hh" />
     <ClInclude Include="core\wwise_hooks.hh" />
   </ItemGroup>
