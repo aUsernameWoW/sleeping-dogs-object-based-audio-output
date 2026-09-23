@@ -50,8 +50,9 @@ Wwise 引擎，改由 `ISpatialAudioClient` 输出：
 
 ### 安装
 
-把 `SDAtmos.asi` 放进游戏的 `plugins\` 文件夹。首次启动会在旁边生成带注释的 `SDAtmos.ini`（中英双语），日志
-写到 `SDAtmos.log`。
+从 [Releases](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases) 下载最新的
+`SDAtmos.asi`（`main` 上每次提交都会自动编译、测试并发布为预发布版），放进游戏的 `plugins\` 文件夹。首次启动会在
+旁边生成带注释的 `SDAtmos.ini`（中英双语），日志写到 `SDAtmos.log`。
 
 游戏内：
 
@@ -76,7 +77,7 @@ Visual Studio 2022（v143），Windows SDK 10.0.26100。项目需要放在工作
 - `reference\SPatch\external`：SDmodding 的 MinHook 构建（`MinHook.h` / `MinHook.lib`）。
 
 GitHub Actions 会对推送和 PR 按同样的布局编译并运行自动测试，依赖的确切版本见 `.github/workflows/build.yml`。
-每次运行的 Artifacts 里有编译好的 `SDAtmos.asi` 和 `.pdb`。
+推送到 `main` 且测试通过的构建会发布为预发布版 `build-<N>`，附带 `SDAtmos.asi` 和 `.pdb`。
 
 ### 致谢
 
@@ -139,8 +140,11 @@ See `CLAUDE.md` for the full design notes and the Wwise internals involved.
 
 ### Install
 
-Copy `SDAtmos.asi` into the game's `plugins\` folder. On first start it writes a commented `SDAtmos.ini`
-next to itself (bilingual, Chinese/English) and logs to `SDAtmos.log`.
+Download the latest `SDAtmos.asi` from
+[Releases](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases) (every commit on
+`main` is built, tested and published as a prerelease) and copy it into the game's `plugins\` folder. On first
+start it writes a commented `SDAtmos.ini` next to itself (bilingual, Chinese/English) and logs to
+`SDAtmos.log`.
 
 In game:
 
@@ -167,8 +171,8 @@ workspace that also has:
 - `reference\SPatch\external`: `MinHook.h` / `MinHook.lib` from SDmodding's MinHook build.
 
 GitHub Actions builds pushes and pull requests in that same layout and runs the automated tests;
-`.github/workflows/build.yml` lists the exact dependency versions. Each run's artifacts hold the built
-`SDAtmos.asi` and its `.pdb`.
+`.github/workflows/build.yml` lists the exact dependency versions. Builds of `main` that pass are published
+as prereleases `build-<N>` with `SDAtmos.asi` and its `.pdb`.
 
 ### Credits
 

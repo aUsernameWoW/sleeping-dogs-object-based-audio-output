@@ -93,9 +93,11 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   height DSP maps, carve energy, decorrelator), `tests/spatial_orbit_manual.cc` (standalone ISAC check:
   `--probe` prints limits, otherwise plays a circling object).
 - `.github/workflows/build.yml` — CI on GitHub Actions (`windows-2025-vs2026`): recreates the workspace
-  layout from pinned commits (ReShade v6.8.0 + `deps/imgui`, SPatch for MinHook), builds Release x64 with
-  `-warnAsError`, runs `tests\*_test.cc`, uploads `.asi` + `.pdb`. Bump the pins when `reference\` moves;
-  `.github/dependabot.yml` proposes updates for the SHA-pinned actions monthly.
+  layout from pinned commits (`env:` `RESHADE_REF` = v6.8.0 + `deps/imgui`, `SPATCH_REF` for MinHook; sparse
+  checkouts, cached under the pins), builds Release x64 with `-warnAsError`, runs `tests\*_test.cc`, uploads
+  `.asi` + `.pdb`; on `main` a second job publishes them as prerelease `build-<N>` (N = commit count). Bump
+  the pins when `reference\` moves; `.github/dependabot.yml` proposes updates for the SHA-pinned actions
+  monthly.
 
 ## Design decisions (don't undo without reason)
 
