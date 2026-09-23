@@ -51,7 +51,9 @@ Status (2026-09-22):
   ambience voice mixes per 10 s (traffic 3463109076, city, crowds, water), F6 rain → ~1200-1500 sky mixes
   per 10 s (rain 2043403999, distant thunder 426107819, 1131612005 under weather), reverb 470-1000 bus
   transfers; height peaks -19..-30 dBFS in rain, floor unchanged elsewhere, zero underruns. Back heights
-  peak ~-30 vs front ~-21 in rain (the rain loops are front-weighted). **Awaiting the listening verdict.**
+  peak ~-30 vs front ~-21 in rain (the rain loops are front-weighted). Listening verdict (user, same day):
+  "absolutely incredible", a big difference, rain clearly audible overhead. No finer tuning requests yet;
+  the user may try Dolby Atmos for Headphones next to judge elevation/precision.
 
 Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
 voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
