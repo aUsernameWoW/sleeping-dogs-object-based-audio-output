@@ -275,6 +275,10 @@ namespace wwise
 				else {
 					telemetry::AddUnpositioned();
 				}
+				if (pbi) {
+					// After the router: what it left in the bed is what the height bed may lift.
+					heights::OnVoiceMix(pbi, mixBus, state, mix);
+				}
 			}
 			else if (gConfig.mVoiceLog) {
 				voices::OnAuxMix();

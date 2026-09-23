@@ -42,7 +42,14 @@ Status (2026-09-22):
   Diagnostics added: every bus is logged once at its first transfer (`heights: bus <id> (<name>) -> <parent>
   ..., mask ..., tier`), and voice snapshots print the dry bus chain (`| bus a>b>c`). No rain fell in that
   hour either, so a debug hotkey **F6** forces rain via `UFG::TimeOfDayManager` (`core/weather.*`).
-  **Next:** read the new log, fix the ambience bus IDs, then F7 A/B in rain.
+- Second session: the runtime bus tree has ~12 buses; nearly all SFX voices mix straight into `master_hdr`
+  (3995202064). Cause: Wwise 2012 only instantiates *mixing* buses (`CAkBus::IsMixingBus`: FX, aux, channel
+  config, positioning, HDR or master); `ambient`/`weather` have none and fold away. **Sky/ambience are now
+  per voice**: the sound's bank-side bus chain (`m_pParentNode`/`m_pBusOutputNode`) is walked once per sound
+  ID, the nearest listed bus decides, and the carve scales the voice's `AkAudioMix` floor gains (after the
+  object router). Reverb stays bus-level. Built, tests pass, deployed; **awaiting the in-game check** with F6
+  rain + F7 A/B (log: `heights: sound N (buses ...) lifts as sky`, `carved ... S sky + A ambience voice
+  mixes` > 0).
 
 Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
 voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
@@ -119,14 +126,16 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   out every object). The log lists each bus's active effects when first seen/changed.
 - **Objects never get dropped**: if Windows refuses a dynamic object, the render thread pans that slot into the
   bed (constant power between adjacent bed speakers).
-- **Height bed is fed per bus, at the bus→parent transfer** (`CAkLEngine::TransferBuffer` → the parent's
-  `ConsumeBuffer(AkAudioBufferBus&)` or `CAkVPLFinalMixNode::ConsumeBuffer`; source AkVPL = buffer − 0x420):
-  the only place a reverb *return* (post-effect) is a separate signal, and one hook sees every active bus once
-  per frame with the gain left to the output (`parent.m_fDownstreamGain`, or the final mix's `m_fNextVolume`
-  +0x444 for top-level buses). Tiers by the bus's **own** ID (sky: weather 317282339 + birds 352130103 at
-  -3 dB; ambience: ambient 77978275 at -6 dB) or its own reverb FX (-6 dB); never by ancestry, so each signal
-  is carved once per tier (weather → then again as ambience ≈ 63 % overhead). Floor scaled in place by
-  sqrt(1 − s²Σw²) (energy-preserving; C/LFE untouched). Map: TFL←FL, TFR←FR, TBL←0.707(SL+BL), TBR likewise;
+- **Height bed: reverb per bus, sky/ambience per voice.** Reverb at the bus→parent transfer
+  (`CAkLEngine::TransferBuffer` → the parent's `ConsumeBuffer(AkAudioBufferBus&)` or
+  `CAkVPLFinalMixNode::ConsumeBuffer`; source AkVPL = buffer − 0x420): the only place a reverb *return*
+  (post-effect) is a separate signal, with the gain left to the output (`parent.m_fDownstreamGain`, or the
+  final mix's `m_fNextVolume` +0x444 for top-level buses); a bus qualifies by its own reverb FX (-6 dB).
+  Sky (weather 317282339 + birds 352130103, -3 dB) and ambience (ambient 77978275, -6 dB) can't be bus-level:
+  those buses aren't mixing buses and never exist at runtime (see facts), so the voice hook walks the
+  sound's bank-side bus chain (nearest listed ancestor wins, cached per sound ID) and carves from the
+  voice's `AkAudioMix`: floor gains of FL FR BL BR SL SR scaled by sqrt(1 − s²Σw²), the same share × PCM ×
+  downstream into the heights. C/LFE untouched. Map: TFL←FL, TFR←FR, TBL←0.707(SL+BL), TBR likewise;
   stereo buses spread front over both. Research-backed decorrelation (Dolby: beds are for diffuse content,
   PLIIz: rain/wind up; Lee: identical copies must be 7.5-9.5 dB down or the image lifts, nothing < 250 Hz
   localizes overhead; DTS upmix patent: 5-20 ms Haas delay + nested all-passes + LF shelf; Atmos guides:
@@ -181,6 +190,12 @@ full spread (gains 0.41-0.45 on 5-6 speakers).
 **Legacy PDB has all Wwise internals** (`reference\SDmodding\game-itself`, IDA MCP). The installed exe is a
 near-identical build (same size, `.text` +80 bytes): Wwise functions are found in it by the legacy bytes with
 small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `RunVPL`/`ConsumeBuffer` +0x50).
+
+**Runtime buses ≠ bank buses**: `CAkBus::IsMixingBus` (0x140a7c4f0) gives an AkVPL only to buses with FX,
+aux buses, own channel config, positioning/HDR (+0x53 bits 2/3) or the master; the rest fold into the nearest
+mixing ancestor. Seen at runtime: root, master_music, master_hdr 3995202064 → 2640427754 → final, EQ bus
+1667833844, bus 447211353, the reverb aux buses (parent 2640427754), and a bus with ID 0. Bank-side chain in
+memory: `CAkParameterNodeBase` +0x38 `m_pParentNode`, +0x40 `m_pBusOutputNode` (`GetControlBus`).
 
 **Bus hierarchy** (`Init.bnk` inside `SFX.pck`, parsed 2026-09-23, tree in `docs\game-audio.md`): 279 buses,
 28 aux buses (each with a ConvolutionReverb/MatrixReverb shareset), names = FNV-1 32-bit of the lowercase

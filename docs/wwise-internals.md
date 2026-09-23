@@ -88,7 +88,20 @@ are already folded into the `AkAudioMix` gains; `r`/`theta`/`phi` are the raw ge
 - HDR: `AkVPL` flag bit 1; `AkHdrBus::ComputeHdrAttenuation` adjusts voice volumes, which end up in the mix
   gains, so objects inherit it.
 
-### Bus → parent transfer (where the height bed taps in)
+### Which buses exist at runtime
+
+`CAkBus::IsMixingBus` (0x140a7c4f0): a bus gets its own `AkVPL` only if it has an effect in `m_pFXChunk`,
+is an aux bus, has its own `m_uChannelConfig`, has positioning (`CAkParameterNodeBase` +0x53 bit 2) or is
+an HDR bus (bit 3), or has no output bus (the master). `CAkBus::GetMixingBus` otherwise recurses to the
+parent, and voices mix straight into that one (their volumes fold in). In this game that leaves about a
+dozen runtime buses: the root, `master_music` (Parametric EQ), `master_hdr` (HDR) and its parent, the EQ bus
+1667833844, bus 447211353, and the reverb aux buses; `master_sfx`, `ambient`, `weather`, `sfx` and the
+other 270 buses of `Init.bnk` never transfer. The bank-side hierarchy is still in memory:
+`CAkParameterNodeBase` +0x38 `m_pParentNode`, +0x40 `m_pBusOutputNode`; a sound's output bus is the first
+`m_pBusOutputNode` up the parent chain (`GetControlBus`, 0x140a71e20), a bus's parent bus is its own
+`m_pBusOutputNode`. IDs are `CAkIndexable` +0x10.
+
+### Bus → parent transfer (where the height bed's reverb tier taps in)
 
 After every voice ran, `CAkLEngine::GetBuffer` (0x140a51d60) walks `m_arrayVPLs` from the last to the
 first (children before parents) and for each bus calls `CAkLEngine::TransferBuffer(AkVPL*)` (0x140a53900),

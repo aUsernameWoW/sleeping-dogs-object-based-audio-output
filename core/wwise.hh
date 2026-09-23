@@ -189,6 +189,17 @@ namespace wwise
 		constexpr size_t kID = 0x10; // uint32
 	}
 
+	// CAkParameterNodeBase (sounds, containers, actor-mixers, buses; all CAkIndexable). The bank-side
+	// hierarchy: a sound's output bus is the first m_pBusOutputNode found walking m_pParentNode up
+	// (CAkParameterNodeBase::GetControlBus); a bus's parent bus is its own m_pBusOutputNode. Only "mixing"
+	// buses get an AkVPL at runtime (CAkBus::IsMixingBus: has effects, is an aux bus, has a channel config,
+	// positioning (+0x53 bit 2), HDR (+0x53 bit 3), or no parent); the rest fold into the nearest one.
+	namespace node
+	{
+		constexpr size_t kParentNode = 0x38;    // CAkParameterNodeBase*
+		constexpr size_t kBusOutputNode = 0x40; // CAkParameterNodeBase* (a CAkBus)
+	}
+
 	namespace game_obj // CAkRegisteredObj
 	{
 		constexpr size_t kID = 0x70; // uint64 AkGameObjectID

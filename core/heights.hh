@@ -11,10 +11,15 @@
 // overhead: rain, wind, thunder, city ambience, reverb returns. The game itself never produced height
 // content (7.1 only), so it is derived here:
 //
-//   - at the point where a bus hands its output to its parent (bus→bus or bus→final mix), buses of three
-//     kinds carve a share of their floor channels into the height accumulators, energy-preserving (the
-//     floor keeps sqrt(1 - share²)): "sky" buses (weather, birds: the loudest share), "ambience" buses (the
-//     ambient subtree: a smaller share of what's left) and reverb buses (any bus running a reverb effect);
+//   - reverb: where a bus running a reverb effect (the aux returns) hands its output to its parent, a share
+//     of its floor channels is carved into the height accumulators, energy-preserving (the floor keeps
+//     sqrt(1 - share²));
+//   - sky (weather, birds) and ambience (the ambient subtree): per voice, where the voice is mixed into its
+//     bus. Wwise 2012 only instantiates "mixing" buses (effects, aux, HDR, positioning, channel config);
+//     the game's ambient/weather buses have none of that and fold into master_hdr, so they never exist at
+//     runtime. The voice's bank-side bus chain (sound → parents → output bus → parent buses) still names
+//     them, and the nearest listed ancestor decides the tier. The carve works on the voice's speaker gains:
+//     the floor gains of FL FR BL BR SL SR are scaled down and the same share × gain × PCM goes up;
 //   - at the end of the buffer the accumulators are decorrelated (Haas pre-delay + all-passes + high-pass,
 //     see height_dsp.hh) and pushed with the bed.
 //
@@ -29,6 +34,10 @@ namespace heights
 	// A bus is about to be mixed into its parent: `vpl` is the source AkVPL, `buffer` its output (modified in
 	// place: the floor loses what goes up), `downstream` the gain from the parent to the device output.
 	void OnBusTransfer(const void* vpl, wwise::AkAudioBufferBus* buffer, float downstream);
+
+	// A voice's dry path is about to be mixed into `mixBus` (after the object router had its say): may scale
+	// `mix` (one AkAudioMix per input channel) and take the lifted share into the height accumulators.
+	void OnVoiceMix(const void* pbi, const void* mixBus, const wwise::AkVPLState* state, wwise::AkAudioMix* mix);
 
 	// End of a rendered buffer: decorrelates and returns this buffer's four height channels (planar, 1024
 	// frames each), or nullptr when nothing is fed. Then StartFrame() clears them for the next buffer.

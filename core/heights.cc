@@ -3,6 +3,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -40,6 +41,7 @@ namespace heights
 	struct Stats
 	{
 		uint32_t mBuffers[4] = {}; // carved bus transfers per tier this period
+		uint32_t mVoices[4] = {};  // carved voice mixes per tier this period
 		float mPeak[kChannels] = {};
 	};
 	static Stats gStats;
@@ -104,16 +106,10 @@ namespace heights
 		return false;
 	}
 
-	// The bus itself decides (not its ancestors): the ambient bus carves once when its whole subtree passes
-	// through it, a weather bus carves its own share first and the remainder is carved again as ambience.
-	static Tier Classify(const void* vpl, uint32_t busID)
+	// Bus-level: only reverb. Sky/ambience are per voice (see the header): those buses aren't mixing buses in
+	// this game and never transfer.
+	static Tier Classify(const void* vpl, uint32_t)
 	{
-		if (Listed(busID, gConfig.mSkyBuses, gConfig.mSkyBusCount)) {
-			return Tier::Sky;
-		}
-		if (Listed(busID, gConfig.mAmbienceBuses, gConfig.mAmbienceBusCount)) {
-			return Tier::Ambience;
-		}
 		// What CAkVPLMixBusNode::ProcessAllFX would have run on this bus's output.
 		const bool bypassAll = At<uint8_t>(vpl, vpl::kBypassAllFx) & 1;
 		for (uint32_t i = 0; i < vpl::kFxSlots && !bypassAll; ++i) {
@@ -212,11 +208,163 @@ namespace heights
 			gStats.mPeak[1] > 0.0f ? 20.0f * std::log10(gStats.mPeak[1]) : -99.0f,
 			gStats.mPeak[2] > 0.0f ? 20.0f * std::log10(gStats.mPeak[2]) : -99.0f,
 			gStats.mPeak[3] > 0.0f ? 20.0f * std::log10(gStats.mPeak[3]) : -99.0f);
-		LOG("heights: %s; bus transfers carved: %u sky, %u ambience, %u reverb; peak dBFS TFL TFR TBL TBR: %s",
+		LOG("heights: %s; carved %u reverb bus transfers, %u sky + %u ambience voice mixes; peak dBFS TFL TFR TBL TBR: %s",
 			Active() ? "on" : gConfig.mHeights.load() ? "on but the stream has no height channels" : "off",
-			gStats.mBuffers[static_cast<int>(Tier::Sky)], gStats.mBuffers[static_cast<int>(Tier::Ambience)],
-			gStats.mBuffers[static_cast<int>(Tier::Reverb)], peaks);
+			gStats.mBuffers[static_cast<int>(Tier::Reverb)], gStats.mVoices[static_cast<int>(Tier::Sky)],
+			gStats.mVoices[static_cast<int>(Tier::Ambience)], peaks);
 		gStats = {};
+	}
+
+	// ---- Per-voice tiers from the bank-side bus chain ----
+
+	// Sound ID → tier, so the node chain is walked once per sound (and logged once).
+	struct SoundTier
+	{
+		uint32_t mSoundID;
+		Tier mTier;
+	};
+	constexpr int kSoundTable = 512; // open addressing, never full: the game has far fewer distinct sounds at once
+	static SoundTier gSoundTiers[kSoundTable];
+	static int gSoundTierCount = 0;
+
+	static Tier ClassifySound(const void* sound, uint32_t soundID)
+	{
+		// CAkParameterNodeBase::GetControlBus: the first output bus up the parent chain.
+		const void* bus = nullptr;
+		const void* node = sound;
+		for (int depth = 0; node && depth < 32 && !bus; ++depth) {
+			bus = At<void*>(node, node::kBusOutputNode);
+			node = At<void*>(node, node::kParentNode);
+		}
+		// Then the bus's parents; the nearest listed one decides.
+		Tier tier = Tier::None;
+		char chain[160] = "";
+		size_t used = 0;
+		for (int depth = 0; bus && depth < 16; ++depth) {
+			const uint32_t id = At<uint32_t>(bus, indexable::kID);
+			if (used < sizeof(chain) - 12) {
+				used += static_cast<size_t>(snprintf(chain + used, sizeof(chain) - used, "%s%u", used ? ">" : "", id));
+			}
+			if (tier == Tier::None) {
+				if (Listed(id, gConfig.mSkyBuses, gConfig.mSkyBusCount)) {
+					tier = Tier::Sky;
+				}
+				else if (Listed(id, gConfig.mAmbienceBuses, gConfig.mAmbienceBusCount)) {
+					tier = Tier::Ambience;
+				}
+			}
+			bus = At<void*>(bus, node::kBusOutputNode);
+		}
+		if (tier != Tier::None) {
+			LOG("heights: sound %u (buses %s) lifts as %s", soundID, chain, TierName(tier));
+		}
+		return tier;
+	}
+
+	static Tier TierOfSound(const void* sound, uint32_t soundID)
+	{
+		uint32_t slot = (soundID * 2654435761u) % kSoundTable;
+		for (int probe = 0; probe < kSoundTable; ++probe, slot = (slot + 1) % kSoundTable) {
+			if (gSoundTiers[slot].mSoundID == soundID) {
+				return gSoundTiers[slot].mTier;
+			}
+			if (gSoundTiers[slot].mSoundID == 0) {
+				break;
+			}
+		}
+		const Tier tier = ClassifySound(sound, soundID);
+		if (gSoundTierCount < kSoundTable / 2) {
+			gSoundTiers[slot] = { soundID, tier };
+			++gSoundTierCount;
+		}
+		return tier;
+	}
+
+	void OnVoiceMix(const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix)
+	{
+		if (!gSampleRate || (gMaster <= 0.0f && gMasterNext <= 0.0f) || !state->buffer.pData || !state->buffer.uValidFrames) {
+			return;
+		}
+		const void* sound = At<void*>(pbi, pbi::kSound);
+		if (!sound) {
+			return;
+		}
+		const uint32_t soundID = At<uint32_t>(sound, indexable::kID);
+		if (!soundID) {
+			return;
+		}
+		const Tier tier = TierOfSound(sound, soundID);
+		if (tier == Tier::None) {
+			return;
+		}
+		const float share = ShareOf(tier);
+		if (share <= 0.0f) {
+			return;
+		}
+
+		// The mix is always 8 gains in Wwise order (FL FR C BL BR SL SR LFE), whatever the bus layout.
+		static FloorMap map;
+		static bool mapReady = false;
+		if (!mapReady) {
+			mapReady = BuildFloorMap(0x63F, map);
+		}
+
+		const uint32_t frames = std::min<uint32_t>(state->buffer.uMaxFrames, kBlockFrames);
+		const uint32_t valid = std::min<uint32_t>(state->buffer.uValidFrames, frames);
+		const uint32_t inputs = std::min<uint32_t>(std::popcount(state->buffer.uChannelMask), 8);
+		const float downstream = At<float>(mixBus, vpl::kDownstreamGain);
+		const float step = 1.0f / static_cast<float>(frames);
+		const float share0 = share * gMaster;
+		const float share1 = share * gMasterNext;
+
+		// Per floor speaker: the voice's contribution (all input channels × their ramped gains), sent up with
+		// the map's weights; then the gains handed to Wwise lose the same energy.
+		float floor[kBlockFrames];
+		for (int s = 0; s < kFloor; ++s) {
+			if (map.mSquares[s] == 0.0f) {
+				continue;
+			}
+			bool any = false;
+			for (uint32_t k = 0; k < inputs; ++k) {
+				any |= mix[k].previous[s] != 0.0f || mix[k].next[s] != 0.0f;
+			}
+			if (!any) {
+				continue;
+			}
+			std::memset(floor, 0, valid * sizeof(float));
+			for (uint32_t k = 0; k < inputs; ++k) {
+				const float g0 = mix[k].previous[s];
+				const float g1 = mix[k].next[s];
+				if (g0 == 0.0f && g1 == 0.0f) {
+					continue;
+				}
+				const float* in = static_cast<const float*>(state->buffer.pData) + static_cast<size_t>(k) * state->buffer.uMaxFrames;
+				for (uint32_t i = 0; i < valid; ++i) {
+					floor[i] += in[i] * (g0 + (g1 - g0) * i * step);
+				}
+			}
+			for (int h = 0; h < kChannels; ++h) {
+				const float w = map.mWeight[h][s];
+				if (w == 0.0f) {
+					continue;
+				}
+				float* out = gMix[h];
+				for (uint32_t i = 0; i < valid; ++i) {
+					const float t = i * step;
+					out[i] += floor[i] * w * downstream * (share0 + (share1 - share0) * t);
+				}
+			}
+			const float k0 = share0 * share0 * map.mSquares[s];
+			const float k1 = share1 * share1 * map.mSquares[s];
+			const float keep0 = k0 < 1.0f ? std::sqrt(1.0f - k0) : 0.0f;
+			const float keep1 = k1 < 1.0f ? std::sqrt(1.0f - k1) : 0.0f;
+			for (uint32_t k = 0; k < inputs; ++k) {
+				mix[k].previous[s] *= keep0;
+				mix[k].next[s] *= keep1;
+			}
+		}
+		gFed = true;
+		++gStats.mVoices[static_cast<int>(tier)];
 	}
 
 	const float* const* FinishFrame()

@@ -127,6 +127,10 @@ routing decisions. The relevant part of the tree (IDs in decimal, `?` = name unk
 28 aux buses (type 19), each running a ConvolutionReverb/MatrixReverb shareset  ← "reverb" tier
 ```
 
+This is the *bank* tree. At runtime only mixing buses exist (see wwise-internals.md, "Which buses exist at
+runtime"): `ambient`, `weather`, `sfx`, `master_sfx` and most others fold into `master_hdr`, which is why
+the height bed classifies sky/ambience per voice through the bank-side node chain.
+
 Observed in-game before the bank was parsed: a top-level bus with a Parametric EQ (1900298039 = master_music,
 also 1667833844 under sfx), Meters (side-chain metering for ducking/RTPC; ignored by the router; carving
 object voices out of the bed lowers what they measure, no audible consequence found), no effects on the
