@@ -72,6 +72,12 @@ namespace config
 		"Ambience = -6\n"
 		"Reverb = -6\n"
 		"\n"
+		"; 留在声道床里、位置高于地平线的 3D 声音（远处的直升机、楼上的声音……）按 sin(仰角) 抬到顶部，这里是\n"
+		"; 在此之上的增益（dB）：0 = 完整的 sin(仰角)，-60 以下 = 不抬。动态对象自带高度，不受影响。\n"
+		"; 3D sounds left in the bed above the horizon (distant helicopters, sounds upstairs...) are lifted by\n"
+		"; sin(elevation) times this gain (dB): 0 = the full sine, -60 or below = off. Objects carry their own height.\n"
+		"Elevation = 0\n"
+		"\n"
 		"; 去相关参数：前方顶部声道的预延迟（毫秒，后方再加 4 ms），高通截止频率（Hz，0 = 关）。改动需重启游戏。\n"
 		"; Decorrelation: pre-delay of the front heights in ms (the back pair gets 4 ms more), high-pass in Hz\n"
 		"; (0 = off). Changes need a game restart.\n"
@@ -201,6 +207,7 @@ namespace config
 		gConfig.mHeightSky = ReadFloat(L"Heights", L"Sky", gConfig.mHeightSky);
 		gConfig.mHeightAmbience = ReadFloat(L"Heights", L"Ambience", gConfig.mHeightAmbience);
 		gConfig.mHeightReverb = ReadFloat(L"Heights", L"Reverb", gConfig.mHeightReverb);
+		gConfig.mHeightElevation = ReadFloat(L"Heights", L"Elevation", gConfig.mHeightElevation);
 		gConfig.mHeightDelay = ReadFloat(L"Heights", L"Delay", gConfig.mHeightDelay);
 		gConfig.mHeightHighPass = ReadFloat(L"Heights", L"HighPass", gConfig.mHeightHighPass);
 		gConfig.mSkyBusCount = ReadIdList(L"Heights", L"SkyBuses", gConfig.mSkyBuses, Config::kMaxBusIds, gConfig.mSkyBusCount);
@@ -231,7 +238,7 @@ namespace config
 		if (!(gConfig.mObjectDistance > 0.1f && gConfig.mObjectDistance < 100.0f)) {
 			gConfig.mObjectDistance = 2.0f;
 		}
-		for (std::atomic<float>* share : { &gConfig.mHeightSky, &gConfig.mHeightAmbience, &gConfig.mHeightReverb }) {
+		for (std::atomic<float>* share : { &gConfig.mHeightSky, &gConfig.mHeightAmbience, &gConfig.mHeightReverb, &gConfig.mHeightElevation }) {
 			// A share above 0 dB would leave the floor with nothing (sqrt of a negative energy).
 			if (!(share->load() <= 0.0f)) {
 				*share = 0.0f;
@@ -333,6 +340,7 @@ namespace config
 		SetValue(text, "Heights", "Sky", FormatFloat(gConfig.mHeightSky));
 		SetValue(text, "Heights", "Ambience", FormatFloat(gConfig.mHeightAmbience));
 		SetValue(text, "Heights", "Reverb", FormatFloat(gConfig.mHeightReverb));
+		SetValue(text, "Heights", "Elevation", FormatFloat(gConfig.mHeightElevation));
 		SetValue(text, "Overlay", "Hud", gConfig.mHud ? "1" : "0");
 		SetValue(text, "Overlay", "Radar", gConfig.mHudRadar ? "1" : "0");
 		SetValue(text, "Overlay", "Markers", gConfig.mHudMarkers ? "1" : "0");

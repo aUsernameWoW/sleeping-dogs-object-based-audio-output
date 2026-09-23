@@ -277,7 +277,7 @@ namespace wwise
 				}
 				if (pbi) {
 					// After the router: what it left in the bed is what the height bed may lift.
-					heights::OnVoiceMix(pbi, mixBus, state, mix);
+					heights::OnVoiceMix(cbx, pbi, mixBus, state, mix);
 				}
 			}
 			else if (gConfig.mVoiceLog) {

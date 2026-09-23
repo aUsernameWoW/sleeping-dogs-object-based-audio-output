@@ -161,7 +161,8 @@ overwritten by deploys):
 | `Objects.BusFx` | 1 | Effects other than Parametric EQ on the bus chain: 0 ignore, 1 voice stays in the bed (master excepted), 2 master included. |
 | `Objects.ActorLift` | 1.5 | Meters added to characters' audio entity positions (their root is at the feet) before Wwise sees them; 0 = off. |
 | `Heights.Enabled` | 1 | Feed the four top bed channels (F7). Needs a format whose native bed has them. |
-| `Heights.Sky` / `Ambience` / `Reverb` | -3 / -6 / -6 | dB share of each tier's bus output moved overhead (the floor keeps the rest, energy-preserving). ≤ -60 = none. |
+| `Heights.Sky` / `Ambience` / `Reverb` | -3 / -6 / -6 | dB share of each tier moved overhead (the floor keeps the rest, energy-preserving). ≤ -60 = none. |
+| `Heights.Elevation` | 0 | Bed voices above the horizon go up by sin(elevation) × this dB gain; ≤ -60 = off. |
 | `Heights.Delay` / `HighPass` | 8 / 200 | Decorrelation: pre-delay in ms (back pair +4), high-pass in Hz. Static. |
 | `Heights.SkyBuses` / `AmbienceBuses` | weather, birds / ambient | Wwise bus IDs (Init.bnk) per tier, comma-separated. |
 | `Overlay.*` | | HUD on/off (F8), radar, markers, labels, bed voices, marker FOV, radar range, hotkey codes (F9 objects, F7 heights, F8 HUD). |

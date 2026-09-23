@@ -46,6 +46,16 @@ static void TestFloorMap()
 
 	// Mono / center only: nothing to lift.
 	CHECK(!BuildFloorMap(0x4, map));
+
+	// The spread map: each side over both of its heights, unit energy per floor channel, no center.
+	BuildSpreadMap(map);
+	CHECK(Near(map.mWeight[TFL][FL], 0.7071f, 1e-3f) && Near(map.mWeight[TBL][FL], 0.7071f, 1e-3f));
+	CHECK(Near(map.mWeight[TFL][SL], 0.7071f, 1e-3f) && Near(map.mWeight[TBL][BL], 0.7071f, 1e-3f));
+	CHECK(map.mWeight[TFR][FL] == 0.0f && map.mWeight[TFL][FR] == 0.0f);
+	CHECK(map.mWeight[TFL][C] == 0.0f && map.mSquares[C] == 0.0f);
+	for (int s : { FL, FR, BL, BR, SL, SR }) {
+		CHECK(Near(map.mSquares[s], 1.0f, 1e-3f));
+	}
 	// Unknown bits (a bed with heights) are refused.
 	CHECK(!BuildFloorMap(0x63F | 0x1000, map));
 }

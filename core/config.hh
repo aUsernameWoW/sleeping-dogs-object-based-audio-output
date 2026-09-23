@@ -46,6 +46,9 @@ struct Config
 	std::atomic<float> mHeightAmbience{ -6.0f }; // the rest of the ambient subtree (city, crowds, water...)
 	std::atomic<float> mHeightReverb{ -6.0f };   // buses running a reverb effect (the aux returns)
 
+	// Bed voices above the horizon are lifted by sin(elevation) × this (dB; 0 = the full sine, -60 = off).
+	std::atomic<float> mHeightElevation{ 0.0f };
+
 	// Decorrelation of the height channels (static; see height_dsp.hh): pre-delay in ms (the back pair gets
 	// 4 ms more), high-pass in Hz (0 = off).
 	float mHeightDelay = 8.0f;

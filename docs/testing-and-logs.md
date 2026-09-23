@@ -82,8 +82,9 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
 - `heights: bus <id> (<name>) -> <parent id> (<name>), mask 0x...: none|sky tier|ambience tier|reverb tier`
   once per bus ID at its first transfer (every bus, so the log shows the runtime bus tree);
   `heights: sound <id> (buses a>b>c) lifts as sky|ambience` once per sound ID (bank-side chain);
-  `heights: on|off; carved R reverb bus transfers, S sky + A ambience voice mixes; peak dBFS TFL TFR TBL
-  TBR: ...` every 10 s. `spatial: stream started ... bed [... TFL TFR TBL TBR] (12 ch)` says the stream has the
+  `heights: sound <id> lifted by elevation (phi <deg>, share <dB>)` once per sound ID;
+  `heights: on|off; carved R reverb bus transfers, S sky + A ambience + E elevated voice mixes; peak dBFS
+  TFL TFR TBL TBR: ...` every 10 s. `spatial: stream started ... bed [... TFL TFR TBL TBR] (12 ch)` says the stream has the
   height channels. Voice snapshot lines end with `| bus a>b>c`: the voice's dry bus and its parents. See
   height-bed.md.
 - `weather: rain ON|OFF (state ..., random interval ..., chance of precipitation ...)` from the F6 debug

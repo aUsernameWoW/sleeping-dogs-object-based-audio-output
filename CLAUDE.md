@@ -54,6 +54,11 @@ Status (2026-09-22):
   peak ~-30 vs front ~-21 in rain (the rain loops are front-weighted). Listening verdict (user, same day):
   "absolutely incredible", a big difference, rain clearly audible overhead. No finer tuning requests yet;
   the user may try Dolby Atmos for Headphones next to judge elevation/precision.
+- Then, at the user's request: 2D sky voices (rain/wind loops) now use a spread map (each side over both of
+  its heights) so the ceiling is even front-to-back; bed voices above the horizon are lifted by sin(phi) ×
+  `Elevation` (default 0 dB) through the directional map, objects excluded. Built, tests pass, deployed;
+  **awaiting the in-game check** (log: `lifted by elevation`, `E elevated voice mixes`; rain TBL/TBR peaks
+  should now match TFL/TFR).
 
 Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
 voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
@@ -140,7 +145,9 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   sound's bank-side bus chain (nearest listed ancestor wins, cached per sound ID) and carves from the
   voice's `AkAudioMix`: floor gains of FL FR BL BR SL SR scaled by sqrt(1 − s²Σw²), the same share × PCM ×
   downstream into the heights. C/LFE untouched. Map: TFL←FL, TFR←FR, TBL←0.707(SL+BL), TBR likewise;
-  stereo buses spread front over both. Research-backed decorrelation (Dolby: beds are for diffuse content,
+  stereo buses spread front over both; 2D sky voices use the spread map (left floor → TFL+TBL at -3 dB,
+  right likewise). Elevation: bed voices with phi > 0 (max over rays, objects excluded) lift by sin(phi) ×
+  `Elevation`, taking the larger of that and the tier share. Research-backed decorrelation (Dolby: beds are for diffuse content,
   PLIIz: rain/wind up; Lee: identical copies must be 7.5-9.5 dB down or the image lifts, nothing < 250 Hz
   localizes overhead; DTS upmix patent: 5-20 ms Haas delay + nested all-passes + LF shelf; Atmos guides:
   front/back heights must differ): 8/12 ms pre-delay, 3 Schroeder all-passes per pair (different sets
@@ -285,7 +292,7 @@ for the same job once Go is installed.
 7. Next: verify the actor lift in-game, radar check, offline tests for the router (fake PBI/cbx). Possible
    experiment: flip the game's own `m_positionListenerAtCamera` to hear the listener-at-player hybrid.
 8. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
-   gunshots/vehicles by sound ID), per-voice elevation for spread bed voices (phi > 0 → heights).
+   gunshots/vehicles by sound ID).
 
 Why not hook `PostEvent`/`SetPosition` as first planned: those give IDs and positions but no audio samples.
 The PCM only exists inside the Wwise pipeline, and Wwise already has the listener-relative direction there.

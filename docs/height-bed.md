@@ -56,7 +56,15 @@ Links and quotes are in the research notes of the 2026-09-23 session; the number
    channels × their Previous→Next gain ramps) goes into the heights with the map's weights, and the gains
    handed to Wwise are scaled down by the same energy. The IDs come from `Init.bnk` (extracted from
    `SFX.pck`; see game-audio.md for the tree and how the names were recovered); the log prints each
-   sound's chain the first time it is lifted (`heights: sound N (buses a>b>c) lifts as sky`).
+   sound's chain the first time it is lifted (`heights: sound N (buses a>b>c) lifts as sky`). Sky voices
+   without a position (the 2D rain/wind loops, which are front-weighted: the first rain session had the
+   back heights 9 dB under the front ones) use the *spread* map instead: each side's floor channels feed
+   both of that side's heights at -3 dB, so left/right stays and the ceiling is even front-to-back.
+3b. **Elevation, per voice.** A 3D voice that stayed in the bed (spread, multi-position, bus effects...)
+   and sits above the horizon is lifted by `sin(phi) × Heights.Elevation` (dB gain on the sine, default
+   0 dB = the full sine; -60 = off), through the directional map, whenever that exceeds its tier share.
+   `phi` is the highest of the voice's rays. Voices holding an object slot (including one fading out) are
+   skipped: objects carry their own elevation. The first lift of each sound is logged with its angle.
 4. **How much.** For a share `s` (linear, from the dB setting) the height accumulators receive
    `signal × s × (gain ramp) × (downstream gain)`, i.e. exactly the level the signal would have had at
    the device output, and the floor is scaled by `sqrt(1 - s² × Σw²)` (energy-preserving; `w` are the
@@ -82,7 +90,7 @@ Links and quotes are in the research notes of the 2026-09-23 session; the number
 
 ## Settings
 
-`[Heights]` in `SDAtmos.ini`: `Enabled` (F7), `Sky`, `Ambience`, `Reverb` (dB shares, live in the menu),
+`[Heights]` in `SDAtmos.ini`: `Enabled` (F7), `Sky`, `Ambience`, `Reverb`, `Elevation` (dB shares, live in the menu),
 `Delay`, `HighPass` (static), `SkyBuses`, `AmbienceBuses` (comma-separated IDs, up to 8 each; an empty value
 means none). The ReShade tab has the three sliders; the HUD status line shows `heights ON/OFF/n/a`.
 
@@ -108,8 +116,9 @@ means none). The ReShade tab has the three sliders; the HUD status line shows `h
 - `heights: sound 391514335 (buses 2043403999>317282339>...) lifts as sky` — once per sound ID, with its
   bank-side bus chain.
 - The F6 debug hotkey forces rain (`core/weather.*`), since the game's random weather may not oblige.
-- `heights: on; carved R reverb bus transfers, S sky + A ambience voice mixes; peak dBFS TFL TFR TBL TBR:
-  ...` every 10 s.
+- `heights: sound N lifted by elevation (phi 35 deg, share -4.8 dB)` — once per sound ID.
+- `heights: on; carved R reverb bus transfers, S sky + A ambience + E elevated voice mixes; peak dBFS TFL
+  TFR TBL TBR: ...` every 10 s.
 
 Offline test: `tests/heights_test.cc` (channel maps for 7.1/5.1/stereo, energy check of the carve, the
 decorrelator's delay/flatness/high-pass, front ≠ back, left = right).

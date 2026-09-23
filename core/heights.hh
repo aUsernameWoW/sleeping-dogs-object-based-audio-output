@@ -20,6 +20,11 @@
 //     runtime. The voice's bank-side bus chain (sound → parents → output bus → parent buses) still names
 //     them, and the nearest listed ancestor decides the tier. The carve works on the voice's speaker gains:
 //     the floor gains of FL FR BL BR SL SR are scaled down and the same share × gain × PCM goes up;
+//     2D sky voices (the rain/wind loops) use a map that spreads each side over both of its heights, so
+//     rain is overhead everywhere rather than in front;
+//   - elevation: a 3D voice left in the bed (spread, multi-position, bus fx...) that sits above the horizon
+//     is lifted by sin(elevation) × the Elevation setting, through the directional map: a helicopter
+//     hovering above stays a helicopter above instead of a sound on the floor ring;
 //   - at the end of the buffer the accumulators are decorrelated (Haas pre-delay + all-passes + high-pass,
 //     see height_dsp.hh) and pushed with the bed.
 //
@@ -37,7 +42,7 @@ namespace heights
 
 	// A voice's dry path is about to be mixed into `mixBus` (after the object router had its say): may scale
 	// `mix` (one AkAudioMix per input channel) and take the lifted share into the height accumulators.
-	void OnVoiceMix(const void* pbi, const void* mixBus, const wwise::AkVPLState* state, wwise::AkAudioMix* mix);
+	void OnVoiceMix(const void* cbx, const void* pbi, const void* mixBus, const wwise::AkVPLState* state, wwise::AkAudioMix* mix);
 
 	// End of a rendered buffer: decorrelates and returns this buffer's four height channels (planar, 1024
 	// frames each), or nullptr when nothing is fed. Then StartFrame() clears them for the next buffer.

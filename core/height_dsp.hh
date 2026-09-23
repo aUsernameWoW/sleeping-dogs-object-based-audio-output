@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 
 // The DSP behind the height bed, free of engine dependencies so tests can include it directly.
 //
@@ -78,6 +79,28 @@ namespace height_dsp
 			map.mAny |= map.mSquares[s] > 0.0f;
 		}
 		return map.mAny;
+	}
+
+	// The 7.1 map for content that belongs everywhere overhead (2D weather loops: rain, wind): left floor
+	// channels feed both left heights, right ones both right heights, so the ceiling is as wide front-to-back
+	// as the floor loop was left-to-right. Left/right stays, front/back evens out.
+	inline void BuildSpreadMap(FloorMap& map)
+	{
+		BuildFloorMap(0x63F, map);
+		std::memset(map.mWeight, 0, sizeof(map.mWeight));
+		std::memset(map.mSquares, 0, sizeof(map.mSquares));
+		for (int s : { FL, BL, SL }) {
+			map.mWeight[TFL][s] = map.mWeight[TBL][s] = 0.70710678f;
+		}
+		for (int s : { FR, BR, SR }) {
+			map.mWeight[TFR][s] = map.mWeight[TBR][s] = 0.70710678f;
+		}
+		for (int s = 0; s < kFloor; ++s) {
+			for (int h = 0; h < kChannels; ++h) {
+				map.mSquares[s] += map.mWeight[h][s] * map.mWeight[h][s];
+			}
+		}
+		map.mAny = true;
 	}
 
 	// Moves a share of a bus's floor output into height accumulators, energy-preserving: a floor channel

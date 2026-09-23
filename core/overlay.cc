@@ -396,13 +396,14 @@ namespace overlay
 		}
 		struct Share { const char* mLabel; std::atomic<float>* mValue; };
 		for (const Share& share : { Share{ "Weather / birds share (dB)", &gConfig.mHeightSky },
-			Share{ "Other ambience share (dB)", &gConfig.mHeightAmbience }, Share{ "Reverb share (dB)", &gConfig.mHeightReverb } }) {
+			Share{ "Other ambience share (dB)", &gConfig.mHeightAmbience }, Share{ "Reverb share (dB)", &gConfig.mHeightReverb },
+			Share{ "Elevated bed voices: sin(elevation) x (dB)", &gConfig.mHeightElevation } }) {
 			float db = share.mValue->load();
 			if (ImGui::SliderFloat(share.mLabel, &db, -24.0f, 0.0f, "%.1f", 0)) {
 				*share.mValue = db;
 			}
 		}
-		ImGui::TextDisabled("0 dB = the whole bus goes up (the floor keeps nothing), -6 dB = a quarter of its power. Decorrelation settings are in the ini.");
+		ImGui::TextDisabled("0 dB = the whole signal goes up (the floor keeps nothing), -6 dB = a quarter of its power. Decorrelation settings are in the ini.");
 
 		ImGui::Separator();
 		Checkbox("HUD (F8 by default)", gConfig.mHud);

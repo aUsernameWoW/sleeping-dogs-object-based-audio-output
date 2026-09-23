@@ -10,6 +10,7 @@
 
 #include "config.hh"
 #include "log.hh"
+#include "objects.hh"
 #include "spatial_out.hh"
 
 namespace heights
@@ -42,6 +43,7 @@ namespace heights
 	{
 		uint32_t mBuffers[4] = {}; // carved bus transfers per tier this period
 		uint32_t mVoices[4] = {};  // carved voice mixes per tier this period
+		uint32_t mElevated = 0;    // voice mixes lifted by elevation
 		float mPeak[kChannels] = {};
 	};
 	static Stats gStats;
@@ -208,10 +210,10 @@ namespace heights
 			gStats.mPeak[1] > 0.0f ? 20.0f * std::log10(gStats.mPeak[1]) : -99.0f,
 			gStats.mPeak[2] > 0.0f ? 20.0f * std::log10(gStats.mPeak[2]) : -99.0f,
 			gStats.mPeak[3] > 0.0f ? 20.0f * std::log10(gStats.mPeak[3]) : -99.0f);
-		LOG("heights: %s; carved %u reverb bus transfers, %u sky + %u ambience voice mixes; peak dBFS TFL TFR TBL TBR: %s",
+		LOG("heights: %s; carved %u reverb bus transfers, %u sky + %u ambience + %u elevated voice mixes; peak dBFS TFL TFR TBL TBR: %s",
 			Active() ? "on" : gConfig.mHeights.load() ? "on but the stream has no height channels" : "off",
 			gStats.mBuffers[static_cast<int>(Tier::Reverb)], gStats.mVoices[static_cast<int>(Tier::Sky)],
-			gStats.mVoices[static_cast<int>(Tier::Ambience)], peaks);
+			gStats.mVoices[static_cast<int>(Tier::Ambience)], gStats.mElevated, peaks);
 		gStats = {};
 	}
 
@@ -222,6 +224,7 @@ namespace heights
 	{
 		uint32_t mSoundID;
 		Tier mTier;
+		bool mElevationLogged;
 	};
 	constexpr int kSoundTable = 512; // open addressing, never full: the game has far fewer distinct sounds at once
 	static SoundTier gSoundTiers[kSoundTable];
@@ -261,26 +264,42 @@ namespace heights
 		return tier;
 	}
 
-	static Tier TierOfSound(const void* sound, uint32_t soundID)
+	// The table entry for a sound (classified on first sight); null only when the table is half full.
+	static SoundTier* EntryOfSound(const void* sound, uint32_t soundID)
 	{
 		uint32_t slot = (soundID * 2654435761u) % kSoundTable;
 		for (int probe = 0; probe < kSoundTable; ++probe, slot = (slot + 1) % kSoundTable) {
 			if (gSoundTiers[slot].mSoundID == soundID) {
-				return gSoundTiers[slot].mTier;
+				return &gSoundTiers[slot];
 			}
 			if (gSoundTiers[slot].mSoundID == 0) {
 				break;
 			}
 		}
-		const Tier tier = ClassifySound(sound, soundID);
-		if (gSoundTierCount < kSoundTable / 2) {
-			gSoundTiers[slot] = { soundID, tier };
-			++gSoundTierCount;
+		if (gSoundTierCount >= kSoundTable / 2) {
+			return nullptr;
 		}
-		return tier;
+		gSoundTiers[slot] = { soundID, ClassifySound(sound, soundID), false };
+		++gSoundTierCount;
+		return &gSoundTiers[slot];
 	}
 
-	void OnVoiceMix(const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix)
+	// Highest elevation (radians) among the voice's rays, 0 if it has no position.
+	static float ElevationOf(const void* cbx, const void* pbi)
+	{
+		if ((At<uint8_t>(pbi, pbi::kPannerBits) & 3) == 0) {
+			return 0.0f;
+		}
+		const auto* rays = At<AkRayVolumeData*>(cbx, cbx::kVolumeData);
+		const uint32_t rayCount = At<uint32_t>(cbx, cbx::kVolumeData + 8);
+		float phi = 0.0f;
+		for (uint32_t i = 0; rays && i < rayCount; ++i) {
+			phi = std::max(phi, rays[i].phi);
+		}
+		return phi;
+	}
+
+	void OnVoiceMix(const void* cbx, const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix)
 	{
 		if (!gSampleRate || (gMaster <= 0.0f && gMasterNext <= 0.0f) || !state->buffer.pData || !state->buffer.uValidFrames) {
 			return;
@@ -293,21 +312,43 @@ namespace heights
 		if (!soundID) {
 			return;
 		}
-		const Tier tier = TierOfSound(sound, soundID);
-		if (tier == Tier::None) {
-			return;
+		SoundTier* entry = EntryOfSound(sound, soundID);
+		const Tier tier = entry ? entry->mTier : ClassifySound(sound, soundID);
+		float share = ShareOf(tier);
+
+		// Elevation: a bed voice above the horizon goes up by sin(phi) (× the setting), whichever is larger.
+		// Objects carry their own elevation; a voice fading out of an object still counts as one.
+		const float elevationGain = DbToGain(gConfig.mHeightElevation.load(std::memory_order_relaxed));
+		bool elevated = false;
+		if (elevationGain > 0.0f && objects::SlotOf(pbi) < 0) {
+			const float phi = ElevationOf(cbx, pbi);
+			if (phi > 0.0f) {
+				const float lift = std::sin(phi) * elevationGain;
+				if (lift > share) {
+					share = lift;
+					elevated = true;
+					if (entry && !entry->mElevationLogged) {
+						entry->mElevationLogged = true;
+						LOG("heights: sound %u lifted by elevation (phi %.0f deg, share %.1f dB)", soundID, phi * 57.2957795f, 20.0f * std::log10(lift));
+					}
+				}
+			}
 		}
-		const float share = ShareOf(tier);
 		if (share <= 0.0f) {
 			return;
 		}
 
-		// The mix is always 8 gains in Wwise order (FL FR C BL BR SL SR LFE), whatever the bus layout.
-		static FloorMap map;
-		static bool mapReady = false;
-		if (!mapReady) {
-			mapReady = BuildFloorMap(0x63F, map);
+		// The mix is always 8 gains in Wwise order (FL FR C BL BR SL SR LFE), whatever the bus layout. Sky
+		// content without a position (the weather loops) spreads over the whole ceiling.
+		static FloorMap directional;
+		static FloorMap spread;
+		static bool mapsReady = false;
+		if (!mapsReady) {
+			mapsReady = BuildFloorMap(0x63F, directional);
+			BuildSpreadMap(spread);
 		}
+		const bool positioned = (At<uint8_t>(pbi, pbi::kPannerBits) & 3) != 0;
+		const FloorMap& map = tier == Tier::Sky && !elevated && !positioned ? spread : directional;
 
 		const uint32_t frames = std::min<uint32_t>(state->buffer.uMaxFrames, kBlockFrames);
 		const uint32_t valid = std::min<uint32_t>(state->buffer.uValidFrames, frames);
@@ -364,7 +405,12 @@ namespace heights
 			}
 		}
 		gFed = true;
-		++gStats.mVoices[static_cast<int>(tier)];
+		if (elevated) {
+			++gStats.mElevated;
+		}
+		else {
+			++gStats.mVoices[static_cast<int>(tier)];
+		}
 	}
 
 	const float* const* FinishFrame()
