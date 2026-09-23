@@ -106,6 +106,7 @@
     <ClCompile Include="core\objects.cc" />
     <ClCompile Include="core\overlay.cc" />
     <ClCompile Include="core\scan.cc" />
+    <ClCompile Include="core\sounds.cc" />
     <ClCompile Include="core\spatial_out.cc" />
     <ClCompile Include="core\telemetry.cc" />
     <ClCompile Include="core\weather.cc" />
@@ -127,6 +128,7 @@
     <ClInclude Include="core\objects.hh" />
     <ClInclude Include="core\overlay.hh" />
     <ClInclude Include="core\scan.hh" />
+    <ClInclude Include="core\sounds.hh" />
     <ClInclude Include="core\spatial_out.hh" />
     <ClInclude Include="core\telemetry.hh" />
     <ClInclude Include="core\weather.hh" />

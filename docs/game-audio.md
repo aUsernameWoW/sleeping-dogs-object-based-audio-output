@@ -90,6 +90,13 @@ every frame by `AudioListener::Update` (0x14014d410):
   So the engine natively supports the "attenuation from the player, panning from the camera" hybrid, and
   scripts switch to it in specific situations. Flipping the byte from the mod is an untried experiment.
 
+## Positions: always one per game object
+
+The exe links `AK::SoundEngine::SetPosition` (0x140a432e0; callers `AudioEntity::ForcePositionUpdate`,
+`AudioEntity::SetShouldFollowListener`) but not `SetMultiplePositions`, and never calls
+`SetActiveListeners` (one listener). Wwise therefore computes exactly one ray per voice; the router's
+multi-position case is a guard that can't trigger in this game.
+
 ## The bus hierarchy (Init.bnk)
 
 `Init.bnk` (bank ID 0x50C63A23, 94 KB, chunks STMG/HIRC/ENVS) sits inside `data\Audio\SD2\SFX.pck`. The
@@ -99,12 +106,14 @@ language`. The HIRC chunk holds 2589 objects (`type u8, size u32, id u32, body`)
 28 aux buses (type 19), 31 effect instances (type 18: 27 ConvolutionReverb, Meters, EQs, one
 MatrixReverb), 2204 states and a few others. A bus body starts with its parent's ID.
 
-Bus names are FNV-1 (32-bit, lowercase) hashes; a dictionary attack recovered 59 of 307, enough for the
-routing decisions. The relevant part of the tree (IDs in decimal, `?` = name unknown):
+Bus names are FNV-1 (32-bit, lowercase) hashes; two dictionary attacks (the second on the bank chains the
+voice log prints as `bank`) recovered ~95 of 307, enough for the routing decisions. The relevant part of
+the tree (IDs in decimal, `?` = name unknown):
 
 ```
 3444197610 ?  (root; "Master Audio Bus" 3803692087 is not used, 805203703 = Master Secondary Bus)
-├ 1900298039 master_music      (Parametric EQ; ui_music, ambient_music, radio_car, karaoke_player...)
+├ 1900298039 master_music      (Parametric EQ; ui_music, radio_car, karaoke_player, 1564565979 ambient_music
+│                                {640484714 ? {1430098981 amb_mus_int {3591285600 ?: 3D stereo emitters}}}...)
 ├ 2640427754 ?
 │ └ 1973600711 ?
 │   ├ 3627036714 master_dialog
@@ -119,9 +128,23 @@ routing decisions. The relevant part of the tree (IDs in decimal, `?` = name unk
 │   │   │   ├ 3888786832 city (Meter) → 3463109076 traffic
 │   │   │   ├ crowds (689383231 crowd_market, 1587111019 crowd_club, 1854869158 crowd_restaurant)
 │   │   │   ├ 2458178259 water_amb, 1930490682 boat_amb, 1830469890 interior_rain, kitchens...
-│   │   └ 393239870 sfx         (fight_foley, fight_impacts, fight_falls, foley, footsteps (Meter),
-│   │                             collisions (Meter), glass, ui, gunshot, bullet_impacts, ricochets,
-│   │                             police_siren (Meter), 1667833844 (Parametric EQ)...)
+│   │   └ 393239870 sfx
+│   │     ├ 3001040443 gunplay: 1287408361 gunshot {1431829326 gunshot_ai, 1312752045 gunshot_close_ai,
+│   │     │     3524362703 gunshot_close_mid, 3928849794 gunshot_close_far, 700411020 ?}, 3936260057
+│   │     │     bullet_impacts, 3968426781 ricochets, 134114496 shells
+│   │     ├ 3317037866 ? (vehicles): 3713103246 veh_player {2010610765 veh_engine_player (Compressor),
+│   │     │     4047272965 veh_skids_player (Meter), 727388285 ? (3 layered loops of the driven car),
+│   │     │     2065465923 ? (mixing bus), 829903555 ? (Meter)}; 2340005816 veh_traffic {447211353
+│   │     │     veh_engine_traffic, 3317730855 veh_horns_traffic, 2434261769 ?}; 987980167 veh_ai
+│   │     │     {1667833844 veh_engine_ai (Parametric EQ), 1683900444 veh_skids_ai, 1935586686 veh_horns_ai};
+│   │     │     127263653 veh_misc; 2102979017 police_siren {2282098049 ?}
+│   │     ├ 556887514 locomotion: 2385628198 footsteps (Meter) {545665447, 1181096339, 1296465089,
+│   │     │     1639857680, 2108779966: ? per character kind}, 247557814 foley
+│   │     ├ 168610243 fighting: 143479525 fight_foley, 1399234913 fight_impacts, 3543689402 fight_falls
+│   │     ├ 824618274 collisions (Meter): 919220061 ? {3634272999 collisions_light, 842656794 ?},
+│   │     │     2449969375 glass {1189545500 car_glass}
+│   │     └ 640021946 efforts, 2923970681 sfx_misc, ui...
+│   ├ 3627036714 master_dialog: 3477157714 ?, 2129285000 ?, 3493548244 ? (mixing bus)
 │   └ 4167303992 ? (medium_explosion...)
 └ 3474110328 ?
 28 aux buses (type 19), each running a ConvolutionReverb/MatrixReverb shareset  ← "reverb" tier

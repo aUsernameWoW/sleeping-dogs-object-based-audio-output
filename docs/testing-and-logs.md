@@ -46,7 +46,8 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
 3. **F8** shows the HUD: radar (log-distance rings, a dot per positioned voice, stick up/down = elevation),
    on-screen markers at each voice's projected direction, a status line (objects on/off, N/limit, voice
    counts, latency). Colors: cyan = object (label = slot number), yellow = qualifies but waiting, gray =
-   spread/quiet (bed), purple = not mono / multi-position, green = player (bed), orange = bus effects (bed).
+   spread/quiet (bed), purple = not mono / multi-position, green = player (bed), orange = bus effects (bed),
+   red = bed by `BedBuses` rule.
 4. **F9** toggles objects (A/B), **F7** the height bed. A banner confirms it even with the HUD off. **F6**
    (debug, `Debug.ToggleRainKey`) forces the game's weather to full rain / clear and locks the randomizer,
    through `UFG::TimeOfDayManager` as the `weather_set_amount` / `weather_lock` script atomics do.
@@ -64,13 +65,26 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
 - `voices: snapshot of frame N` then up to 16 `voice` lines (3D first), every 5 s when `VoiceLog` is on:
   `voice <role> snd=<soundID> obj=<gameObjectID hex> pan=<panner> pos=<posSource> ch=<channels> rays=<n>
   r=<m> theta=<deg> phi=<deg> dryMix=<g> | gain=<total> down=<downstream> rms=<rms> | FL .. FR .. C .. BL
-  .. BR .. SL .. SR .. LFE ..` — `role` is `objN` or `bed`; the eight gains are Wwise's own Next gains,
-  before the router touched them. `obj=` is a `UFG::AudioEntity` address (one-shots are 0x170 apart).
+  .. BR .. SL .. SR .. LFE .. | bus <runtime chain> | bank <bank chain>` — `role` is `objN`, or why the
+  router left the voice in the bed on the previous buffer (`wait`, `spread`, `quiet`, `stereo`, `multi`,
+  `player`, `busfx`, `rule`; `bed` = not tracked, e.g. objects off); the eight gains are Wwise's own Next
+  gains, before the router touched them. `obj=` is a `UFG::AudioEntity` address (one-shots are 0x170
+  apart). `bus` is the runtime AkVPL chain (bus IDs, mostly `master_hdr` → final), `bank` the sound's
+  bank-side chain with recovered names (`gunshot>sfx>master_sfx>master_hdr>...`), which says what the
+  sound *is* and is what `ObjectBuses` / `BedBuses` / `SkyBuses` / `AmbienceBuses` match against.
 - `voices: frame N: D dry (T 3D), A aux sends; max over last period ...`
 - `objects: target T, budget B, slots in use S; since last: I instant, P promoted; demoted O outranked, D
   disqualified (spread/player/bus fx), U unrenderable, X switched off; E ended as objects; max V voices
   tracked, max C candidates` — the churn line. Healthy fight: instant 30-60, promoted < 20, demoted single
   digits.
+- `objects: 3D voice mixes: N object, N waiting, N spread, N quiet, N not mono, N multi-position, N player,
+  N bus fx, N bed rule` — every positioned voice mix of the period by the router's final reason: how much
+  of the 3D content is objects and what keeps the rest in the bed.
+- `objects: sound S is not mono|multi-position (channel mask 0x.., N rays, r .. m, gain .., point-likeness
+  ..), bank <chain>` — once per sound: a 3D voice the router can't render as one mono object. None seen so
+  far (see voice-router.md); if they appear, this identifies them.
+- `sounds: table full (N sounds); later sounds are classified without caching` — the per-sound bank chain
+  cache (6144 sounds) overflowed; harmless, only the once-only logs for later sounds are lost.
 - `objects: player audio component <ptr> (entity <ptr>), SFX entity <ptr>` — the player was identified;
   appears again after loads.
 - `objects: bus <ptr> (id <busID>, parent <ptr>) fx: <name> (0x<id>) [applied to objects|ignored]` — a bus

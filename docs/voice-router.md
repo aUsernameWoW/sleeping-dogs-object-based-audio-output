@@ -33,18 +33,20 @@ show):
 |---|---|
 | `Player` | one of the local player's game objects (see below), `PlayerInBed` on |
 | `BusFx` | the bus chain runs an effect objects can't reproduce, `BusFx` policy ≥ 1 |
+| `BedRule` | a bus of the sound's bank-side chain is listed in `BedBuses` |
 | `MultiPosition` | more than one ray (one sound at several places) |
 | `NotMono` | stereo or more channels |
 | `Quiet` | `gainNext` = 0, or `level` below threshold |
-| `Spread` | `pointness` < 0.6 |
+| `Spread` | `pointness` < 0.6 (waived when a bus of the chain is listed in `ObjectBuses`) |
 | `Candidate` | qualifies; waiting for a slot or a rank |
 | `Object` | is one (or crossfading in/out) |
 
 Two flags per tracked voice:
 
 - `mCandidate` — may become an object (reason == `Candidate`).
-- `mHoldable` — may stay one: no `Player`/`BusFx` rule, mono, single position, and `pointness` ≥ 0.5
-  (hysteresis of 0.1 below the entry threshold). Quiet is not a reason to lose a slot.
+- `mHoldable` — may stay one: no `Player`/`BusFx`/`BedRule` rule, mono, single position, and `pointness` ≥
+  0.5 (hysteresis of 0.1 below the entry threshold) or an `ObjectBuses` bus on the chain. Quiet is not a
+  reason to lose a slot.
 
 ## Slots, roles and crossfades
 
@@ -77,6 +79,58 @@ spread hysteresis it is 0-4.
 reserved). `gBudget` (slots that may still be in use) shrinks only after the affected objects have faded
 back, so switching objects off or lowering the limit is click-free. If the stream reopens with fewer slots,
 the excess objects drop to the bed without a fade (nothing to fade through).
+
+## Per-bus rules (`ObjectBuses` / `BedBuses`)
+
+Two ini lists of Wwise bus IDs let a category override the built-in policy: sounds under an `ObjectBuses`
+bus are candidates whatever their spread, sounds under a `BedBuses` bus never leave it. Default:
+`ObjectBuses` empty, `BedBuses = 3713103246` (`veh_player`, the car the player drives; see below). The
+log's `bank` field and the `3D voice mixes` tally are there to find out whether a category needs a rule.
+
+What the first driving + gunfight log (2026-09-23, ~9 min) said, by category of positioned voice mixes:
+
+| Category | object | spread | other | Verdict |
+|---|---|---|---|---|
+| gunshot / gunplay | 17 | 3 | 8 quiet | already objects; the spread ones are silent or a distant 2D layer → **no rule** |
+| veh_player (727388285 layers, skids) | 124 | 2 | 62 bus fx (engine, Compressor) | the driven car, r 7.4 m, θ 0°, φ −3°: 3-5 objects dead ahead at all times → **BedBuses default** |
+| veh_engine_traffic | 143 | 48 | | spread only at 38-75 m (the game diffuses distant traffic) → leave |
+| police_siren | 46 | 41 | | spread at 37-69 m by design; `ObjectBuses = 2102979017` is the experiment to try |
+| collisions | 109 | 44 | 29 player | fine |
+| master_dialog | 36 | 5 | | NPC speech as objects (with the actor lift) |
+| ambient | 51 | 87 | | point emitters (steam pipes, fans) become objects, loops stay |
+| footsteps | 2 | 8 | 20 player | NPC steps spread at ~5 m by design |
+
+Also seen: the 20 slots were saturated for most of the fights (avg 17-19 sounding), with up to 122
+candidates and ~160 3D voices at once, which is why the driven car's 3-5 slots matter and why the voice
+table went from 128 to 256 entries (it filled twice).
+
+"Under a bus" means the sound's **bank-side** chain (`core/sounds.cc`): from the `CAkSoundBase` up
+`m_pParentNode` to the first node with an `m_pBusOutputNode` (`GetControlBus`), then bus to bus through
+`m_pBusOutputNode` to the root, walked once per sound ID and cached (8192-slot table, 3/4 fill; a full
+table falls back to uncached walks). The runtime AkVPL chain is useless for this: Wwise 2012 only
+instantiates mixing buses, so nearly every SFX voice mixes straight into `master_hdr`. Rules are by bus
+rather than by sound ID because bus names are FNV-1 hashes of readable names (`gunshot` 1287408361,
+`footsteps` 2385628198... recovered by dictionary), whereas sound object IDs are per-object hashes with
+no name to recover, and one category has dozens of them.
+
+## Stereo and multi-position voices
+
+Both were plan items ("a stereo 3D voice as two objects", "one object per emitter position"). Findings
+(2026-09-23):
+
+- **Multi-position emitters don't exist in this game.** `AK::SoundEngine::SetMultiplePositions` isn't
+  linked into the exe (only `SetPosition`, called from `AudioEntity::ForcePositionUpdate` /
+  `SetShouldFollowListener`), `SetActiveListeners` is never called (one listener, mask 1), and
+  `CAkPBI::ComputeVolumeData3D` makes rays = positions × active listeners. So `rays` is always 1 and
+  `Reason::MultiPosition` can't occur; the code keeps the check as a guard.
+- **Stereo 3D voices are rare or absent.** The first in-game log had 76 non-mono among 544 logged 3D
+  voices (night-market fight); the latest one had 0 among 1006 (street, rain). Wwise 2012 pans an N-channel
+  3D source by fanning its channels around the emitter direction (`CAkSpeakerPan::GetSpeakerVolumesPlane`:
+  each channel gets an arc of spread × 2.56 / N units on a 512-unit circle, so at spread 0 all channels
+  collapse onto the same point and get identical gains). A two-object rendering would place channel k at
+  the centroid of its own gain vector (`mix[k]`), which the router already receives per channel. Not built
+  until a log shows which sounds these are: `objects: sound S is not mono ...` is logged once per such
+  sound with its bank chain, and the `3D voice mixes` tally counts them.
 
 ## Player attribution
 
@@ -128,4 +182,6 @@ The bed share of a crossfading voice still goes through the real bus effects, so
 Every voice reported to `telemetry::Add` carries θ, φ, r, level, sound ID, slot and reason; the frame is
 published at buffer end (try-lock; the HUD reads the latest published frame). `objects::LogStats` writes a
 line every voice-log period: instant promotions, promotions, demotions by cause, voices ended as objects,
-max voices tracked (table of 128), max candidates.
+max voices tracked (table of 256), max candidates; and a second line counting the period's positioned
+voice mixes by final reason (`3D voice mixes: N object, N waiting, N spread, ...`). Each tracked voice
+remembers its last reason (`objects::ReasonOf`) so the voice log can print it in the role column.

@@ -59,6 +59,27 @@ Status (2026-09-22):
   `Elevation` (default 0 dB) through the directional map, objects excluded. Built, tests pass, deployed;
   **awaiting the in-game check** (log: `lifted by elevation`, `E elevated voice mixes`; rain TBL/TBR peaks
   should now match TFL/TFR).
+- 2026-09-23, plan item 8 explored (stereo 3D voices, multi-position emitters, per-category rules):
+  **multi-position can't happen** (`SetMultiplePositions` not linked, one listener → always 1 ray);
+  **stereo 3D voices**: 0 of 1006 3D snapshot lines in the latest log (76 of 544 in the very first one),
+  identity unknown → now logged once per sound (`objects: sound S is not mono ...`) with the bank chain;
+  **per-category rules built** as `ObjectBuses` / `BedBuses` (bank-side bus IDs, empty by default) on a new
+  per-sound bank-chain cache `core/sounds.*`. The log also gained a per-period tally of 3D voice mixes by
+  reason and the voice lines show the reason + `bank` chain. Found and fixed on the way: heights' 256-entry
+  sound-tier table filled after 2.5 min of play, after which every voice mix re-walked the chain and
+  re-logged (`lifts as` ×12k in one log); the shared cache holds 6144 sounds and logs once when full.
+  Built, tests pass (incl. new `sounds_test`), deployed.
+- Same day, the driving + gunfight log (~9 min; table in `docs\voice-router.md`): **gunshots already become
+  objects** (no rule needed); **the driven car was 3-5 objects dead ahead** (veh_player layers at r 7.4 m,
+  θ 0°; its engine bus has a Compressor and was already `busfx`) → `BedBuses` now defaults to `veh_player`
+  3713103246, PlayerInBed's reasoning; traffic engines and police sirens are spread only at 37-75 m (the
+  game diffuses distant vehicles; `ObjectBuses = 2102979017` is the experiment if the user wants sirens
+  sharp); stereo 3D = 94 of 464k positioned mixes (the player's own stereo foley + 3D music emitters) →
+  item closed; the 20 slots were saturated in fights (avg 17-19, up to 122 candidates, ~160 3D voices) and
+  the 128-entry voice table filled twice → 256. A second FNV-1 pass on the `bank` chains named ~35 more
+  buses (gunplay/gunshot_*, veh_*, locomotion, fighting, collisions_light...; tree in `docs\game-audio.md`).
+  Built, tests pass, deployed; **awaiting the user's ear** on the car-in-bed default (compare with
+  `BedBuses =` empty).
 
 Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
 voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
@@ -75,6 +96,8 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   `AK::SoundEngine::SetPosition` (actor lift); voice snapshot logging.
 - `core/objects.*` — voice router: which voices become objects, sample capture, bed/object crossfades,
   per-voice report (position, level, role, why it stays in the bed).
+- `core/sounds.*` — per-sound cache of the bank-side bus chain (`m_pParentNode` → `m_pBusOutputNode` →
+  parents) with recovered bus names; read by the height tiers, the router's per-bus rules and the voice log.
 - `core/heights.*`, `core/height_dsp.hh` — height bed: tiers (sky / ambience by bus ID, reverb by bus FX),
   energy-preserving carve at the bus transfer, decorrelator (pre-delay + all-passes + high-pass); the DSP
   header has no engine dependencies (tested offline).
@@ -90,7 +113,8 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
 - `core/config.*`, `core/log.*` — `SDAtmos.ini` / `SDAtmos.log`.
 - `tests/load_test.cc` (automated: loads into a Wwise-less process), `tests/config_save_test.cc` (automated:
   `config::Save` keeps UTF-8 comments/other keys, adds missing ones), `tests/heights_test.cc` (automated:
-  height DSP maps, carve energy, decorrelator), `tests/spatial_orbit_manual.cc` (standalone ISAC check:
+  height DSP maps, carve energy, decorrelator), `tests/sounds_test.cc` (automated: bank chain walk, names,
+  cache saturation against fake nodes), `tests/spatial_orbit_manual.cc` (standalone ISAC check:
   `--probe` prints limits, otherwise plays a circling object).
 - `.github/workflows/build.yml` — CI on GitHub Actions (`windows-2025-vs2026`): recreates the workspace
   layout from pinned commits (`env:` `RESHADE_REF` = v6.8.0 + `deps/imgui`, `MINHOOK_REF` = v1.3.4; sparse
@@ -173,6 +197,11 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   spread (FL/FR + SL/SR), i.e. the original mix. Industry practice agrees: player sounds are listener-relative
   (2D/spread), objects are for things that move around the listener. Identification is by game object, not
   position (see below), so NPCs in melee range are unaffected.
+- **The player's vehicle stays in the bed too** (`BedBuses` default `veh_player` 3713103246, via the sound's
+  bank-side bus chain): the camera rides behind the car, so its loops sit ~7 m dead ahead and were 3-5
+  objects at all times while driving, listener-relative content taking slots from the world. Per-bus rules
+  are by bus, not sound ID, because bus names are recoverable FNV-1 hashes and one category has dozens of
+  sound IDs.
 - **Runtime settings are atomics in `gConfig`** (objects on/off, max objects, distance, HUD options): read by the
   audio thread, written by the hotkey thread and the menu. Objects on/off and lowering the limit crossfade the
   affected objects back into the bed first (`gTarget` drops at once, `gBudget` only after the fades). Dynamic
@@ -204,7 +233,14 @@ xaudio2 import). `CAkSinkDirectSound` exists but isn't used. With the hook the s
 **Game audio content** (first in-game log): the game sends nothing to LFE (≈ -110 dBFS all session).
 Concurrent voices: up to ~38 dry, ~36 of them 3D, ~30 aux sends in a street fight — more than 20 objects.
 Most 3D voices are mono (468 of 544 logged), panner 3D + game-defined positions; many ambience emitters use
-full spread (gains 0.41-0.45 on 5-6 speakers).
+full spread (gains 0.41-0.45 on 5-6 speakers). Third session's log: 0 non-mono among 1006 3D snapshot lines.
+
+**One ray per voice, always**: `AK::SoundEngine::SetMultiplePositions` isn't linked (only `SetPosition`,
+from `AudioEntity::ForcePositionUpdate` / `SetShouldFollowListener`), `SetActiveListeners` is never
+called, and `CAkPBI::ComputeVolumeData3D` (0x140a802d0) makes rays = positions × listeners. Multi-channel
+3D sources: `CAkSpeakerPan::GetSpeakerVolumesPlane` (0x140a4edb0) fans the N channels around theta, each
+over an arc of spread × 2.56 / N units of a 512-unit circle (identical gains at spread 0); `mix[k]` is
+channel k's gains.
 
 **Legacy PDB has all Wwise internals** (`reference\SDmodding\game-itself`, IDA MCP). The installed exe is a
 near-identical build (same size, `.text` +80 bytes): Wwise functions are found in it by the legacy bytes with
@@ -220,8 +256,13 @@ memory: `CAkParameterNodeBase` +0x38 `m_pParentNode`, +0x40 `m_pBusOutputNode` (
 28 aux buses (each with a ConvolutionReverb/MatrixReverb shareset), names = FNV-1 32-bit of the lowercase
 name (59 of 307 recovered by dictionary: ambient 77978275 ⊃ weather 317282339 {thunder, wind, rain}, birds
 352130103, city 3888786832, traffic, crowd_*, water_amb, boat_amb, interior_rain; master_sfx 3462011115,
-master_hdr, master_aux, master_dialog, master_music 1900298039 (the EQ bus), sfx 393239870 {footsteps,
-gunshot, fight_*, collisions...}). AKPK v1 bank entries are 24 bytes (id, block, size, pad, offset, lang);
+master_hdr, master_aux, master_dialog, master_music 1900298039 (the EQ bus), sfx 393239870 {gunplay
+3001040443 {gunshot {gunshot_ai, gunshot_close_ai/mid/far}, bullet_impacts, ricochets, shells}, 3317037866 ?
+{veh_player 3713103246 {veh_engine_player (Compressor), veh_skids_player, 727388285 ?}, veh_traffic
+{veh_engine_traffic 447211353, veh_horns_traffic}, veh_ai {veh_engine_ai 1667833844 (the sfx EQ bus),
+veh_skids_ai, veh_horns_ai}, veh_misc, police_siren 2102979017}, locomotion 556887514 {footsteps, foley},
+fighting {fight_foley/impacts/falls}, collisions {collisions_light, glass {car_glass}}, efforts, sfx_misc}).
+Names live in `core/sounds.cc` (`BusName`); ~95 of 307 known after two dictionary passes. AKPK v1 bank entries are 24 bytes (id, block, size, pad, offset, lang);
 the Python used is in the session scratchpad, not the repo. The user has `reference\wwiseutil-SDDE` (Go)
 for the same job once Go is installed.
 
@@ -299,8 +340,11 @@ for the same job once Go is installed.
    wrong: shares (menu sliders), pre-delay/high-pass (ini), the bus lists.
 7. Next: verify the actor lift in-game, radar check, offline tests for the router (fake PBI/cbx). Possible
    experiment: flip the game's own `m_positionListenerAtCamera` to hear the listener-at-player hybrid.
-8. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
-   gunshots/vehicles by sound ID).
+8. Done 2026-09-23: multi-position emitters — **not applicable**; stereo 3D voices — **closed** (94 of
+   464k positioned mixes, all player foley or 3D music emitters; if ever needed, place channel k at the
+   centroid of `mix[k]`'s gains); per-category rules — **built** (`ObjectBuses` / `BedBuses`), gunshots
+   need none, the driven car is in the bed by default. Open: the user's verdict on that default, and
+   whether distant police sirens should be forced sharp (`ObjectBuses = 2102979017`).
 
 Why not hook `PostEvent`/`SetPosition` as first planned: those give IDs and positions but no audio samples.
 The PCM only exists inside the Wwise pipeline, and Wwise already has the listener-relative direction there.

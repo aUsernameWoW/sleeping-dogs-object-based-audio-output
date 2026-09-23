@@ -13,6 +13,7 @@
 #include "heights.hh"
 #include "log.hh"
 #include "objects.hh"
+#include "sounds.hh"
 #include "scan.hh"
 #include "spatial_out.hh"
 #include "telemetry.hh"
@@ -131,6 +132,27 @@ namespace wwise
 		static uint32_t gDry = 0, gDry3D = 0, gAux = 0;
 		static uint32_t gMaxDry = 0, gMaxDry3D = 0, gMaxAux = 0;
 
+		// Short form of the router's reason for the role column (-1 = the router doesn't track the voice).
+		static const char* ReasonTag(int reason)
+		{
+			using telemetry::Reason;
+			if (reason < 0) {
+				return "bed";
+			}
+			switch (static_cast<Reason>(reason)) {
+			case Reason::Object: return "obj";
+			case Reason::Candidate: return "wait";
+			case Reason::Spread: return "spread";
+			case Reason::Quiet: return "quiet";
+			case Reason::NotMono: return "stereo";
+			case Reason::MultiPosition: return "multi";
+			case Reason::Player: return "player";
+			case Reason::BusFx: return "busfx";
+			case Reason::BedRule: return "rule";
+			}
+			return "?";
+		}
+
 		static void LogVoice(const void* mixBus, const void* cbx, const void* pbi, const AkVPLState* state, const AkAudioMix* mix)
 		{
 			const uint32_t channels = static_cast<uint32_t>(std::popcount(state->buffer.uChannelMask));
@@ -163,9 +185,27 @@ namespace wwise
 			// Speaker gains are in Wwise's internal order (FL FR C BL BR SL SR LFE, established from the first
 			// in-game log: theta -135° lands on index 3, +134° on 4, ±90° on 5/6).
 			const float* g = mix[0].next;
+			// Role, or why the router left the voice in the bed: its decision for the previous buffer, since the
+			// router runs after this log (so that the gains shown are Wwise's own).
 			const int slot = objects::SlotOf(pbi);
 			char role[16];
-			snprintf(role, sizeof(role), slot >= 0 ? "obj%d" : "bed", slot);
+			if (slot >= 0) {
+				snprintf(role, sizeof(role), "obj%d", slot);
+			}
+			else {
+				snprintf(role, sizeof(role), "%s", ReasonTag(objects::ReasonOf(pbi)));
+			}
+
+			// The bank-side bus chain (what the sound is), as opposed to the runtime chain after "bus".
+			char bank[200] = "-";
+			if (sound && soundID) {
+				sounds::Info* info = sounds::Lookup(sound, soundID);
+				sounds::Info local;
+				if (!info) {
+					sounds::Walk(sound, soundID, local);
+				}
+				sounds::FormatChain(info ? *info : local, bank, sizeof(bank));
+			}
 
 			// The voice's dry bus and its parents up to the final mix, by bus ID (the runtime bus tree).
 			char chain[128] = "";
@@ -176,17 +216,17 @@ namespace wwise
 
 			constexpr float kDeg = 57.2957795f;
 			if (rays && rayCount) {
-				LOG("  voice %-5s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=%u r=%.1f theta=%.0f phi=%.0f dryMix=%.2f | "
-					"gain=%.3f down=%.2f rms=%.3f | FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f | bus %s",
+				LOG("  voice %-6s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=%u r=%.1f theta=%.0f phi=%.0f dryMix=%.2f | "
+					"gain=%.3f down=%.2f rms=%.3f | FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f | bus %s | bank %s",
 					role, soundID, objID, pannerBits & 3, (pannerBits >> 2) & 3, channels, rayCount, rays[0].r,
 					rays[0].theta * kDeg, rays[0].phi * kDeg, rays[0].fDryMixGain, std::sqrt(power),
-					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], chain);
+					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], chain, bank);
 			}
 			else {
-				LOG("  voice %-5s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=0 | gain=%.3f down=%.2f rms=%.3f | "
-					"FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f | bus %s",
+				LOG("  voice %-6s snd=%u obj=%llX pan=%u pos=%u ch=%u rays=0 | gain=%.3f down=%.2f rms=%.3f | "
+					"FL %.2f FR %.2f C %.2f BL %.2f BR %.2f SL %.2f SR %.2f LFE %.2f | bus %s | bank %s",
 					role, soundID, objID, pannerBits & 3, (pannerBits >> 2) & 3, channels, std::sqrt(power),
-					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], chain);
+					At<float>(mixBus, vpl::kDownstreamGain), rms, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], chain, bank);
 			}
 		}
 

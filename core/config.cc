@@ -51,6 +51,21 @@ namespace config
 		"; 2 = master bus included, 0 = ignore. The log lists the buses with effects.\n"
 		"BusFx = 1\n"
 		"\n"
+		"; 按 Wwise 总线强制分类（Init.bnk 里的总线 ID，逗号分隔，最多 8 个；声音的输出总线或其任一上级在列表里就算）：\n"
+		"; ObjectBuses 下的声音只要是单声道点声源就一直是对象候选，不看扩散度（例如 police_siren 2102979017：远处的\n"
+		"; 警笛被游戏做成了扩散声）；BedBuses 下的永远留在声道床里。默认 BedBuses = 玩家自己开的车（veh_player\n"
+		"; 3713103246），理由和 PlayerInBed 一样：摄像机在车后，车的声音就在正前方 7 米，做成对象只会占满名额。\n"
+		"; 枪声本来就会成为对象，不用强制。日志 voice 行末尾的 bank 就是每条声音的总线链（已知名字会显示出来）。\n"
+		"; Per-bus rules (bus IDs from Init.bnk, comma-separated, up to 8; a sound counts if its output bus or any\n"
+		"; bus above it is listed): mono point sources under an ObjectBuses bus are always object candidates,\n"
+		"; whatever their spread (e.g. police_siren 2102979017: distant sirens are spread by the game); sounds\n"
+		"; under a BedBuses bus always stay in the bed. Default BedBuses = the player's own car (veh_player\n"
+		"; 3713103246), for the PlayerInBed reason: the camera rides behind it, so its sounds sit 7 m dead ahead\n"
+		"; and as objects only fill the slots. Gunshots become objects on their own. The voice log's \"bank\"\n"
+		"; field shows each sound's bus chain (known names spelled out).\n"
+		"ObjectBuses =\n"
+		"BedBuses = 3713103246\n"
+		"\n"
 		"; 游戏把角色的发声位置放在脚底；这里把角色（NPC 语音等）抬高多少米到头部附近，0 = 不抬。\n"
 		"; 只影响方向和一点点距离衰减，游戏自己的遮挡/距离计算不受影响。\n"
 		"; The game positions characters' sounds at their feet; lift them this many meters (0 = off).\n"
@@ -203,6 +218,8 @@ namespace config
 		gConfig.mPlayerInBed = ReadBool(L"Objects", L"PlayerInBed", gConfig.mPlayerInBed);
 		gConfig.mBusFx = ReadInt(L"Objects", L"BusFx", gConfig.mBusFx);
 		gConfig.mActorLift = ReadFloat(L"Objects", L"ActorLift", gConfig.mActorLift);
+		gConfig.mObjectBusCount = ReadIdList(L"Objects", L"ObjectBuses", gConfig.mObjectBuses, Config::kMaxBusIds, gConfig.mObjectBusCount);
+		gConfig.mBedBusCount = ReadIdList(L"Objects", L"BedBuses", gConfig.mBedBuses, Config::kMaxBusIds, gConfig.mBedBusCount);
 		gConfig.mHeights = ReadBool(L"Heights", L"Enabled", gConfig.mHeights);
 		gConfig.mHeightSky = ReadFloat(L"Heights", L"Sky", gConfig.mHeightSky);
 		gConfig.mHeightAmbience = ReadFloat(L"Heights", L"Ambience", gConfig.mHeightAmbience);

@@ -17,7 +17,9 @@ namespace telemetry
 		MultiPosition, // several emitter positions (one sound, many places)
 		Player,        // the local player's own sounds: kept in the bed like the original mix
 		BusFx,         // its bus chain has insert effects an object would skip
+		BedRule,       // its bank-side bus chain is listed in BedBuses
 	};
+	constexpr int kReasonCount = 9;
 
 	struct Voice
 	{

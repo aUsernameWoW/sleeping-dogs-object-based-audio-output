@@ -11,6 +11,7 @@
 #include "config.hh"
 #include "log.hh"
 #include "objects.hh"
+#include "sounds.hh"
 #include "spatial_out.hh"
 
 namespace heights
@@ -56,37 +57,7 @@ namespace heights
 	static uint32_t gSeen[kMaxSeen];
 	static int gSeenCount = 0;
 
-	// Names recovered from Init.bnk by dictionary FNV-1 (logging only; the IDs drive the routing).
-	static const char* BusName(uint32_t id)
-	{
-		switch (id) {
-		case 77978275: return "ambient";
-		case 317282339: return "weather";
-		case 186852181: return "thunder";
-		case 1537061107: return "wind";
-		case 2043403999: return "rain";
-		case 352130103: return "birds";
-		case 3888786832: return "city";
-		case 3463109076: return "traffic";
-		case 2458178259: return "water_amb";
-		case 1930490682: return "boat_amb";
-		case 689383231: return "crowd_market";
-		case 1587111019: return "crowd_club";
-		case 1854869158: return "crowd_restaurant";
-		case 1830469890: return "interior_rain";
-		case 3462011115: return "master_sfx";
-		case 3946296192: return "master_aux";
-		case 3995202064: return "master_hdr";
-		case 3627036714: return "master_dialog";
-		case 1900298039: return "master_music";
-		case 393239870: return "sfx";
-		case 2385628198: return "footsteps";
-		case 1287408361: return "gunshot";
-		case 3444197610: return "root";
-		case 0: return "-";
-		default: return "?";
-		}
-	}
+	using sounds::BusName;
 
 	static const char* TierName(Tier tier)
 	{
@@ -219,69 +190,37 @@ namespace heights
 
 	// ---- Per-voice tiers from the bank-side bus chain ----
 
-	// Sound ID → tier, so the node chain is walked once per sound (and logged once).
-	struct SoundTier
+	// The nearest listed bus decides; sounds::Info caches the chain and the result per sound ID.
+	static Tier TierOfChain(const sounds::Info& info)
 	{
-		uint32_t mSoundID;
-		Tier mTier;
-		bool mElevationLogged;
-	};
-	constexpr int kSoundTable = 512; // open addressing, never full: the game has far fewer distinct sounds at once
-	static SoundTier gSoundTiers[kSoundTable];
-	static int gSoundTierCount = 0;
-
-	static Tier ClassifySound(const void* sound, uint32_t soundID)
-	{
-		// CAkParameterNodeBase::GetControlBus: the first output bus up the parent chain.
-		const void* bus = nullptr;
-		const void* node = sound;
-		for (int depth = 0; node && depth < 32 && !bus; ++depth) {
-			bus = At<void*>(node, node::kBusOutputNode);
-			node = At<void*>(node, node::kParentNode);
+		int sky = 0;
+		int ambience = 0;
+		const bool isSky = sounds::Listed(info, gConfig.mSkyBuses, gConfig.mSkyBusCount, &sky);
+		const bool isAmbience = sounds::Listed(info, gConfig.mAmbienceBuses, gConfig.mAmbienceBusCount, &ambience);
+		if (isSky && (!isAmbience || sky <= ambience)) {
+			return Tier::Sky;
 		}
-		// Then the bus's parents; the nearest listed one decides.
-		Tier tier = Tier::None;
-		char chain[160] = "";
-		size_t used = 0;
-		for (int depth = 0; bus && depth < 16; ++depth) {
-			const uint32_t id = At<uint32_t>(bus, indexable::kID);
-			if (used < sizeof(chain) - 12) {
-				used += static_cast<size_t>(snprintf(chain + used, sizeof(chain) - used, "%s%u", used ? ">" : "", id));
-			}
-			if (tier == Tier::None) {
-				if (Listed(id, gConfig.mSkyBuses, gConfig.mSkyBusCount)) {
-					tier = Tier::Sky;
-				}
-				else if (Listed(id, gConfig.mAmbienceBuses, gConfig.mAmbienceBusCount)) {
-					tier = Tier::Ambience;
-				}
-			}
-			bus = At<void*>(bus, node::kBusOutputNode);
-		}
-		if (tier != Tier::None) {
-			LOG("heights: sound %u (buses %s) lifts as %s", soundID, chain, TierName(tier));
-		}
-		return tier;
+		return isAmbience ? Tier::Ambience : Tier::None;
 	}
 
-	// The table entry for a sound (classified on first sight); null only when the table is half full.
-	static SoundTier* EntryOfSound(const void* sound, uint32_t soundID)
+	static Tier TierOfSound(const void* sound, uint32_t soundID, sounds::Info*& entry)
 	{
-		uint32_t slot = (soundID * 2654435761u) % kSoundTable;
-		for (int probe = 0; probe < kSoundTable; ++probe, slot = (slot + 1) % kSoundTable) {
-			if (gSoundTiers[slot].mSoundID == soundID) {
-				return &gSoundTiers[slot];
-			}
-			if (gSoundTiers[slot].mSoundID == 0) {
-				break;
+		entry = sounds::Lookup(sound, soundID);
+		if (!entry) {
+			// Table full: classify from a throwaway walk, without the once-only log.
+			sounds::Info local;
+			sounds::Walk(sound, soundID, local);
+			return TierOfChain(local);
+		}
+		if (entry->mHeightTier < 0) {
+			const Tier tier = TierOfChain(*entry);
+			entry->mHeightTier = static_cast<int8_t>(tier);
+			if (tier != Tier::None) {
+				char chain[200];
+				LOG("heights: sound %u (buses %s) lifts as %s", soundID, sounds::FormatChain(*entry, chain, sizeof(chain)), TierName(tier));
 			}
 		}
-		if (gSoundTierCount >= kSoundTable / 2) {
-			return nullptr;
-		}
-		gSoundTiers[slot] = { soundID, ClassifySound(sound, soundID), false };
-		++gSoundTierCount;
-		return &gSoundTiers[slot];
+		return static_cast<Tier>(entry->mHeightTier);
 	}
 
 	// Highest elevation (radians) among the voice's rays, 0 if it has no position.
@@ -312,8 +251,8 @@ namespace heights
 		if (!soundID) {
 			return;
 		}
-		SoundTier* entry = EntryOfSound(sound, soundID);
-		const Tier tier = entry ? entry->mTier : ClassifySound(sound, soundID);
+		sounds::Info* entry = nullptr;
+		const Tier tier = TierOfSound(sound, soundID, entry);
 		float share = ShareOf(tier);
 
 		// Elevation: a bed voice above the horizon goes up by sin(phi) (× the setting), whichever is larger.

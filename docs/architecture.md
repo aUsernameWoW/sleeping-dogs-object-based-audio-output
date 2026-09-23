@@ -72,13 +72,14 @@ Other threads:
 | `core/game.hh` | Game-side (UFG) layouts: `AudioEntity`, `ActorAudioComponent`, `OneShot`, the player's name hash, `qSymbol` CRC. |
 | `core/wwise_hooks.*` | Byte signatures, MinHook hooks (`CAkSinkXAudio2::Init/PassData/PassSilence`, `CAkLEngine::RunVPL`, `CAkVPLMixBusNode::ConsumeBuffer` (voice and bus variants), `CAkVPLFinalMixNode::ConsumeBuffer`, `AK::SoundEngine::SetPosition` for the actor lift), voice snapshot logging, `CAkOutputMgr::m_Devices` lookup, plugin names. |
 | `core/objects.*` | The voice router: candidate rules, slot assignment, ranking, crossfades, player attribution, bus effect check, Parametric EQ reproduction. |
+| `core/sounds.*` | Per-sound cache of the bank-side bus chain (sound → containers → output bus → parent buses), with recovered bus names. The height bed's sky/ambience tiers and the router's `ObjectBuses` / `BedBuses` rules read it; the voice log prints it as `bank`. |
 | `core/heights.*`, `core/height_dsp.hh` | The height bed: which buses feed the four top channels and how much (sky / ambience / reverb tiers), the energy-preserving carve, the decorrelator (pre-delay, all-passes, high-pass). `height_dsp.hh` has no engine dependencies so `heights_test` can include it. |
 | `core/spatial_out.*` | The ISAC stream: bed (floor + heights) + dynamic objects, SPSC ring with per-block object metadata, render thread, activation/reuse/release, fold-into-bed, reopen on device loss. |
 | `core/telemetry.*` | Per-buffer voice snapshot handed from the audio thread to the render thread (try-lock; the audio thread never waits). |
 | `core/overlay.*` | Hotkeys, ReShade add-on (menu + HUD). |
 | `core/scan.*` | Unique IDA-style pattern search in the exe's `.text`, RIP-relative operand decoding. |
 | `core/config.*`, `core/log.*` | `SDAtmos.ini` (written with bilingual comments if missing, saved byte-wise so the UTF-8 comments survive) and `SDAtmos.log`. |
-| `tests/` | `load_test.cc` (loads the .asi into a Wwise-less process), `config_save_test.cc`, `heights_test.cc` (height bed DSP offline), `spatial_orbit_manual.cc` (standalone ISAC check). |
+| `tests/` | `load_test.cc` (loads the .asi into a Wwise-less process), `config_save_test.cc`, `heights_test.cc` (height bed DSP offline), `sounds_test.cc` (bank chain walk and cache against fake nodes), `spatial_orbit_manual.cc` (standalone ISAC check). |
 
 ## Design decisions and their reasons
 
@@ -158,6 +159,8 @@ overwritten by deploys):
 | `Objects.MaxObjects` | 20 | Upper bound; the format may allow fewer (Atmos over HDMI: 20). |
 | `Objects.Distance` | 2.0 | Radius (m) objects are placed at; Wwise already applied distance attenuation, only the direction is new information. |
 | `Objects.PlayerInBed` | 1 | The player's own sounds stay in the bed. |
+| `Objects.ObjectBuses` | empty | Bus IDs whose sounds are object candidates whatever their spread. |
+| `Objects.BedBuses` | 3713103246 | Bus IDs whose sounds never leave the bed; default = `veh_player`, the car the player drives (PlayerInBed's reasoning). |
 | `Objects.BusFx` | 1 | Effects other than Parametric EQ on the bus chain: 0 ignore, 1 voice stays in the bed (master excepted), 2 master included. |
 | `Objects.ActorLift` | 1.5 | Meters added to characters' audio entity positions (their root is at the feet) before Wwise sees them; 0 = off. |
 | `Heights.Enabled` | 1 | Feed the four top bed channels (F7). Needs a format whose native bed has them. |

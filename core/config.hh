@@ -32,6 +32,19 @@ struct Config
 	// bus included.
 	std::atomic<int> mBusFx{ 1 };
 
+	// Bus ID lists (Wwise short IDs from Init.bnk) hold up to this many each.
+	static constexpr int kMaxBusIds = 8;
+
+	// Per-bus router rules on the sound's bank-side bus chain (output bus or any bus above it): sounds under
+	// an ObjectBuses bus are object candidates whatever their spread (gunshots, vehicles...); sounds under a
+	// BedBuses bus never leave the bed. Default: the player's own vehicle (veh_player 3713103246) stays in the
+	// bed for the same reason his footsteps do (PlayerInBed): the camera rides behind the car, so its sounds
+	// are a cluster ~7 m dead ahead that would otherwise fill object slots with listener-relative content.
+	uint32_t mObjectBuses[kMaxBusIds] = {};
+	int mObjectBusCount = 0;
+	uint32_t mBedBuses[kMaxBusIds] = { 3713103246 };
+	int mBedBusCount = 1;
+
 	// Characters' audio entities sit at the feet; lift them this many meters towards head height in the
 	// positions handed to Wwise (0 = off). Applied on the next position update of each character.
 	std::atomic<float> mActorLift{ 1.5f };
@@ -54,9 +67,7 @@ struct Config
 	float mHeightDelay = 8.0f;
 	float mHeightHighPass = 200.0f;
 
-	// Bus IDs (Wwise short IDs from Init.bnk) whose output is treated as sky / ambience when it enters its
-	// parent. Reverb buses are recognized by their effects instead.
-	static constexpr int kMaxBusIds = 8;
+	// Buses whose sounds are treated as sky / ambience. Reverb buses are recognized by their effects instead.
 	uint32_t mSkyBuses[kMaxBusIds] = { 317282339, 352130103 }; // weather, birds
 	int mSkyBusCount = 2;
 	uint32_t mAmbienceBuses[kMaxBusIds] = { 77978275 }; // ambient

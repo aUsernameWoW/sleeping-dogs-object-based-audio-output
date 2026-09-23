@@ -11,6 +11,7 @@
 #include "config.hh"
 #include "game.hh"
 #include "log.hh"
+#include "sounds.hh"
 #include "wwise_hooks.hh"
 
 namespace objects
@@ -18,7 +19,8 @@ namespace objects
 	using namespace wwise;
 	using telemetry::Reason;
 
-	constexpr int kMaxVoices = 128;
+	// Big gunfights while driving reach ~160 3D voices (second in-game log hit the old limit of 128 twice).
+	constexpr int kMaxVoices = 256;
 
 	// Largest single speaker gain / total gain. A point source panned between two speakers is >= 0.7; Wwise
 	// spread smears the gain evenly (0.41-0.45 over 5-6 speakers). Spread sounds are area sounds: bed.
@@ -58,6 +60,7 @@ namespace objects
 		bool mHoldable;  // may stay one (looser than mCandidate: quiet is fine, spread has hysteresis)
 		Role mRole;
 		int mSlot;
+		Reason mReason; // last decision, for the voice log
 	};
 
 	static Voice gVoices[kMaxVoices];
@@ -86,6 +89,7 @@ namespace objects
 		int mVoicesMax = 0;
 		int mCandidatesMax = 0;
 		uint32_t mTableFull = 0;
+		uint32_t mReasons[telemetry::kReasonCount] = {}; // 3D voice mixes per final reason
 	};
 	static Stats gStats;
 
@@ -381,7 +385,7 @@ namespace objects
 		return gTarget;
 	}
 
-	bool OnDryMix(const void* cbx, const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix,
+	static bool Route(const void* cbx, const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix,
 		telemetry::Voice& report)
 	{
 		const auto* rays = At<AkRayVolumeData*>(cbx, cbx::kVolumeData);
@@ -425,12 +429,26 @@ namespace objects
 		EqChain eq;
 		const bool busFx = ChainHasFx(mixBus, busPolicy, eq) && busPolicy > 0;
 
+		// What the sound is, from its bank-side bus chain: the per-bus rules (ObjectBuses / BedBuses).
+		const uint32_t soundID = sound ? At<uint32_t>(sound, indexable::kID) : 0;
+		sounds::Info* info = sounds::Lookup(sound, soundID);
+		sounds::Info local;
+		if (!info && sound) {
+			sounds::Walk(sound, soundID, local);
+		}
+		const sounds::Info& bank = info ? *info : local;
+		const bool forced = sounds::Listed(bank, gConfig.mObjectBuses, gConfig.mObjectBusCount);
+		const bool bedRule = sounds::Listed(bank, gConfig.mBedBuses, gConfig.mBedBusCount);
+
 		Reason reason = Reason::Candidate;
 		if (player) {
 			reason = Reason::Player;
 		}
 		else if (busFx) {
 			reason = Reason::BusFx;
+		}
+		else if (bedRule) {
+			reason = Reason::BedRule;
 		}
 		else if (rayCount > 1) {
 			reason = Reason::MultiPosition;
@@ -441,18 +459,28 @@ namespace objects
 		else if (gainNext <= 0.0f) {
 			reason = Reason::Quiet;
 		}
-		else if (pointness < kPointLike) {
+		else if (pointness < kPointLike && !forced) {
 			reason = Reason::Spread;
 		}
 		else if (level < kMinLevel) {
 			reason = Reason::Quiet;
 		}
 
+		if ((rayCount > 1 || !mono) && info && !info->mShapeLogged) {
+			// Plan items "stereo 3D voices as two objects" and "multi-position emitters": neither has shown up in
+			// the logs so far; this says what they are if they do.
+			info->mShapeLogged = true;
+			char chain[200];
+			LOG("objects: sound %u is %s (channel mask 0x%X, %u rays, r %.1f m, gain %.3f, point-likeness %.2f), bank %s",
+				soundID, rayCount > 1 ? "multi-position" : "not mono", channelMask, rayCount, rays[0].r, gainNext, pointness,
+				sounds::FormatChain(*info, chain, sizeof(chain)));
+		}
+
 		report.mTheta = rays[0].theta;
 		report.mPhi = rays[0].phi;
 		report.mDistance = rays[0].r;
 		report.mLevel = level;
-		report.mSoundID = sound ? At<uint32_t>(sound, indexable::kID) : 0;
+		report.mSoundID = soundID;
 		report.mSlot = -1;
 		report.mReason = reason;
 
@@ -467,15 +495,16 @@ namespace objects
 			}
 			v = &gVoices[gVoiceCount++];
 			// Eligible for promotion right away: it has no bed/object history to protect.
-			*v = { pbi, playingID, 0, gFrame - kMinRoleFrames, 0.0f, false, false, Role::Bed, -1 };
+			*v = { pbi, playingID, 0, gFrame - kMinRoleFrames, 0.0f, false, false, Role::Bed, -1, reason };
 		}
 		const bool isNew = v->mLastSeen == 0;
 		v->mLastSeen = gFrame;
 		v->mCandidate = reason == Reason::Candidate;
 		// An object rides out its decay: only a clearly spread pan, a bed rule, or losing its mono single-position
 		// shape takes the slot away; louder candidates can still outrank it.
-		v->mHoldable = !player && !busFx && rayCount == 1 && mono && pointness >= kPointLike - kSpreadHysteresis;
+		v->mHoldable = !player && !busFx && !bedRule && rayCount == 1 && mono && (forced || pointness >= kPointLike - kSpreadHysteresis);
 		v->mScore = level;
+		v->mReason = reason;
 
 		if (rayCount > 1 || !mono) {
 			// Can't be rendered as one mono object this buffer: straight back to the bed.
@@ -532,7 +561,18 @@ namespace objects
 
 		report.mSlot = static_cast<int8_t>(v->mSlot);
 		report.mReason = Reason::Object;
+		v->mReason = Reason::Object;
 		return true;
+	}
+
+	bool OnDryMix(const void* cbx, const void* pbi, const void* mixBus, const AkVPLState* state, AkAudioMix* mix,
+		telemetry::Voice& report)
+	{
+		const bool positioned = Route(cbx, pbi, mixBus, state, mix, report);
+		if (positioned) {
+			++gStats.mReasons[static_cast<int>(report.mReason)];
+		}
+		return positioned;
 	}
 
 	const spatial::ObjectBlock* FinishFrame()
@@ -669,6 +709,16 @@ namespace objects
 		return -1;
 	}
 
+	int ReasonOf(const void* pbi)
+	{
+		for (int i = 0; i < gVoiceCount; ++i) {
+			if (gVoices[i].mPbi == pbi) {
+				return static_cast<int>(gVoices[i].mReason);
+			}
+		}
+		return -1;
+	}
+
 	void LogStats()
 	{
 		LOG("objects: target %u, budget %u, slots in use %d; since last: %u instant, %u promoted; demoted %u outranked, "
@@ -677,6 +727,12 @@ namespace objects
 			gTarget, gBudget, std::popcount(gSlotsUsed), gStats.mInstant, gStats.mPromoted, gStats.mOutranked,
 			gStats.mDisqualified, gStats.mUnrenderable, gStats.mShrunk, gStats.mEnded, gStats.mVoicesMax,
 			gStats.mCandidatesMax, gStats.mTableFull ? " (voice table full!)" : "");
+		const uint32_t* r = gStats.mReasons;
+		LOG("objects: 3D voice mixes: %u object, %u waiting, %u spread, %u quiet, %u not mono, %u multi-position, %u player, "
+			"%u bus fx, %u bed rule",
+			r[static_cast<int>(Reason::Object)], r[static_cast<int>(Reason::Candidate)], r[static_cast<int>(Reason::Spread)],
+			r[static_cast<int>(Reason::Quiet)], r[static_cast<int>(Reason::NotMono)], r[static_cast<int>(Reason::MultiPosition)],
+			r[static_cast<int>(Reason::Player)], r[static_cast<int>(Reason::BusFx)], r[static_cast<int>(Reason::BedRule)]);
 		gStats = {};
 	}
 }

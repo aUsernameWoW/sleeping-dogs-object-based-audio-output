@@ -41,6 +41,10 @@ namespace objects
 	// For the voice log: the voice's current slot, or -1 when it's in the bed.
 	int SlotOf(const void* pbi);
 
+	// For the voice log: the router's last decision for the voice (a telemetry::Reason), or -1 if it isn't
+	// tracked (objects off, or a voice the router never saw).
+	int ReasonOf(const void* pbi);
+
 	// Periodic summary (promotions, demotions, voices tracked).
 	void LogStats();
 }

@@ -69,6 +69,20 @@ up, row 2 front): `theta = atan2(right, front)` in radians, **positive = right**
 **positive = up**. Multi-position emitters get one ray per position. Distance attenuation, cone and spread
 are already folded into the `AkAudioMix` gains; `r`/`theta`/`phi` are the raw geometry.
 
+**Rays.** `CAkPBI::ComputeVolumeData3D` (0x140a802d0) makes one `AkRayVolumeData` per (emitter position ×
+active listener): positions come from the game object's `AkPositionKeeper` (several only through
+`SetMultiplePositions`, which this exe doesn't link), listeners from its listener mask (default 1;
+`SetActiveListeners` is never called). So every voice has exactly one ray here.
+
+**Multi-channel 3D sources.** `CAkListener::ComputeSpeakerMatrix` (0x140a68140) calls
+`CAkSpeakerPan::GetSpeakerVolumesPlane(theta, centerPct, spread, volumes, numFullBandChannels, outputConfig,
+device)` (0x140a4edb0) once per ray: the N full-band input channels are fanned around `theta`, each
+covering an arc of `spread × 2.56 / N` units of a 512-unit circle (spread 100 = 180° total), each arc
+filled with power-summed point pans (`AddSpeakerVolumesPower`) and normalized. At spread 0 all channels
+land on the same point with identical gains; at higher spread a stereo source's L and R separate around the
+emitter, and a mono source smears over the arc (the "spread" the router measures as point-likeness).
+`mix[k]` in the `ConsumeBuffer` hook is channel k's resulting gain set.
+
 ### Buses
 
 - `AkVPL` (1392 bytes) is a mix bus instance. It begins with `CAkVPLMixBusNode` (: `CAkBusFX` :
