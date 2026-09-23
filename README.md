@@ -1,5 +1,7 @@
 # Sleeping Dogs: Definitive Edition — object-based audio output (SDAtmos)
 
+[![Build](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/actions/workflows/build.yml/badge.svg)](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/actions/workflows/build.yml)
+
 [中文](#中文) | [English](#english)
 
 ## 中文
@@ -67,6 +69,9 @@ Visual Studio 2022（v143），Windows SDK 10.0.26100。项目需要放在工作
 
 - `reference\reshade`：ReShade v6.8.0 源码，并初始化 `deps\imgui` 子模块。
 - `reference\SPatch\external`：SDmodding 的 MinHook 构建（`MinHook.h` / `MinHook.lib`）。
+
+GitHub Actions 会对推送和 PR 按同样的布局编译并运行自动测试，依赖的确切版本见 `.github/workflows/build.yml`。
+每次运行的 Artifacts 里有编译好的 `SDAtmos.asi` 和 `.pdb`。
 
 ### 致谢
 
@@ -149,6 +154,10 @@ workspace that also has:
 
 - `reference\reshade`: ReShade v6.8.0 source, with the `deps\imgui` submodule initialized.
 - `reference\SPatch\external`: `MinHook.h` / `MinHook.lib` from SDmodding's MinHook build.
+
+GitHub Actions builds pushes and pull requests in that same layout and runs the automated tests;
+`.github/workflows/build.yml` lists the exact dependency versions. Each run's artifacts hold the built
+`SDAtmos.asi` and its `.pdb`.
 
 ### Credits
 

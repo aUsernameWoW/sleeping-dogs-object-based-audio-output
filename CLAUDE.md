@@ -59,6 +59,10 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
 - `tests/load_test.cc` (automated: loads into a Wwise-less process), `tests/config_save_test.cc` (automated:
   `config::Save` keeps UTF-8 comments/other keys, adds missing ones), `tests/spatial_orbit_manual.cc`
   (standalone ISAC check: `--probe` prints limits, otherwise plays a circling object).
+- `.github/workflows/build.yml` — CI on GitHub Actions (`windows-2025-vs2026`): recreates the workspace
+  layout from pinned commits (ReShade v6.8.0 + `deps/imgui`, SPatch for MinHook), builds Release x64 with
+  `-warnAsError`, runs `tests\*_test.cc`, uploads `.asi` + `.pdb`. Bump the pins when `reference\` moves;
+  `.github/dependabot.yml` proposes updates for the SHA-pinned actions monthly.
 
 ## Design decisions (don't undo without reason)
 

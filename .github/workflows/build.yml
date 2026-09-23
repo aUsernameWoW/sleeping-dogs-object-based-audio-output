@@ -1,0 +1,103 @@
+# Builds SDAtmos.asi and runs the automated tests, the way tools\build.ps1 -Test does in the modding
+# workspace. The .vcxproj reads its third-party headers/libs from ..\..\reference, so the job recreates that
+# layout: this repo in mods\SDAtmos, ReShade in reference\reshade, SPatch (MinHook build) in reference\SPatch.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Release x64
+    # The image windows-latest points to: Windows Server 2025, Visual Studio 2026 with the project's v143
+    # toolset (MSVC 14.44) installed alongside. Named explicitly: plain windows-2025 has been served both
+    # VS 2022 and VS 2026 images (actions/runner-images#14004).
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: mods/SDAtmos
+    steps:
+      - name: Check out SDAtmos
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: mods/SDAtmos
+          persist-credentials: false
+
+      # Keep in step with reference\reshade: ReShade only accepts add-ons built against its own ImGui version.
+      - name: Check out ReShade 6.8.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: crosire/reshade
+          ref: 18deaa52de0c425a78b329e9cb3c497281cd00ec # v6.8.0
+          path: reference/reshade
+          persist-credentials: false
+
+      - name: Check out Dear ImGui (the commit ReShade pins)
+        working-directory: reference/reshade
+        run: git submodule update --init --depth 1 deps/imgui
+
+      # external\MinHook.h/.lib: SDmodding's reduced MinHook fork, x64 /MT.
+      - name: Check out SPatch (MinHook build)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: xowny/SPatch
+          ref: 9227eee1aa7b86990780fb49906cabdf8a9a4f78
+          path: reference/SPatch
+          sparse-checkout: external
+          persist-credentials: false
+
+      # The build is warning-free at /W4 and should stay so, hence -warnAsError (CI only, not build.ps1).
+      - name: Build
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          & "$vs\MSBuild\Current\Bin\amd64\MSBuild.exe" SDAtmos.sln -p:Configuration=Release -p:Platform=x64 -v:m -nologo -warnAsError
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      # tests\*.cc are all compiled; *_test.cc run with the .asi path as argv[1] (exit 0 = pass),
+      # *_manual.cc need a spatial audio device.
+      - name: Test
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          & "$vs\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          $asi = (Resolve-Path build\Release\SDAtmos.asi).Path
+          $out = (New-Item -ItemType Directory -Force build\tests).FullName
+          $failed = @()
+          foreach ($src in Get-ChildItem tests -Filter *.cc) {
+              Push-Location $out
+              cl /nologo /EHsc /W3 /std:c++20 /utf-8 $src.FullName
+              $compiled = $LASTEXITCODE -eq 0
+              Pop-Location
+              if (-not $compiled) { throw "Failed to compile $($src.Name)" }
+          }
+          foreach ($src in Get-ChildItem tests -Filter *_test.cc) {
+              Write-Host "== $($src.BaseName)"
+              # Run next to a private copy so the test writes its .ini/.log there, not in build\Release.
+              $sandbox = (New-Item -ItemType Directory -Force (Join-Path $out $src.BaseName)).FullName
+              Copy-Item $asi $sandbox -Force
+              & (Join-Path $out "$($src.BaseName).exe") (Join-Path $sandbox SDAtmos.asi)
+              if ($LASTEXITCODE) { $failed += $src.BaseName }
+          }
+          if ($failed) { throw "Failed: $($failed -join ', ')" }
+
+      - name: Upload SDAtmos.asi
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SDAtmos
+          path: |
+            mods/SDAtmos/build/Release/SDAtmos.asi
+            mods/SDAtmos/build/Release/SDAtmos.pdb
+          if-no-files-found: error
