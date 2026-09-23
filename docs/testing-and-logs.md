@@ -98,6 +98,9 @@ Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after eac
 - Bus effects: one top-level Parametric EQ, one Meter, none on the master.
 - Listening: with objects on, the mix is clearly directional even from an off-center seat; the player's
   own sounds are enveloping rather than a point ahead.
+- Height bed (third session): street ambience ≈ 3500 lifted voice mixes per 10 s, F6 rain ≈ 1200-1500 sky
+  mixes per 10 s, reverb 470-1000 bus transfers; height peaks -19..-30 dBFS in rain (front pair louder
+  than back: the rain loops are front-weighted), zero underruns.
 
 ## Troubleshooting
 

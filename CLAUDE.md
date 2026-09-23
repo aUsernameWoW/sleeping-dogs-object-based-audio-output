@@ -47,9 +47,11 @@ Status (2026-09-22):
   config, positioning, HDR or master); `ambient`/`weather` have none and fold away. **Sky/ambience are now
   per voice**: the sound's bank-side bus chain (`m_pParentNode`/`m_pBusOutputNode`) is walked once per sound
   ID, the nearest listed bus decides, and the carve scales the voice's `AkAudioMix` floor gains (after the
-  object router). Reverb stays bus-level. Built, tests pass, deployed; **awaiting the in-game check** with F6
-  rain + F7 A/B (log: `heights: sound N (buses ...) lifts as sky`, `carved ... S sky + A ambience voice
-  mixes` > 0).
+  object router). Reverb stays bus-level. Third session **confirmed it mechanically**: on a street ~3500
+  ambience voice mixes per 10 s (traffic 3463109076, city, crowds, water), F6 rain → ~1200-1500 sky mixes
+  per 10 s (rain 2043403999, distant thunder 426107819, 1131612005 under weather), reverb 470-1000 bus
+  transfers; height peaks -19..-30 dBFS in rain, floor unchanged elsewhere, zero underruns. Back heights
+  peak ~-30 vs front ~-21 in rain (the rain loops are front-weighted). **Awaiting the listening verdict.**
 
 Long-form documentation for humans is in `docs\` (architecture, Wwise internals, game audio, spatial output,
 voice router, reverse-engineering workflow, testing/logs). Keep both in sync: this file is the summary,
