@@ -15,7 +15,8 @@ namespace game
 	// the voices carry is the address of a UFG::AudioEntity.
 	namespace audio_entity
 	{
-		constexpr size_t kName = 0x18; // qSymbol m_name: the owning SimObject's name for actor components
+		constexpr size_t kName = 0x18;     // qSymbol m_name: the owning SimObject's name for actor components
+		constexpr size_t kPosition = 0x50; // qMatrix44 m_WorldMatrix (+0x20) row 3: world x, y, z (meters)
 	}
 
 	// UFG::ActorAudioComponent = SimComponent (0x40) + AudioEntity base + own fields. Its AudioEntity base is

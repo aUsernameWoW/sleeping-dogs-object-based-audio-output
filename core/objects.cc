@@ -133,6 +133,12 @@ namespace objects
 	static uint64_t gPlayerComponent = 0;
 	static uint64_t gPlayerSfxEntity = 0;
 
+	// One-shots fired for the player by other systems (action-tree audio tasks: the walk↔sprint transition
+	// steps, damage rigs, VFX) hold their handle in the task, not in the audio component, so they're recognized
+	// by position instead: within this many meters of the player's audio entity. NPC one-shots in melee range
+	// get caught too, which only sends them to the bed, as the original mix had them.
+	constexpr float kNearPlayerMeters = 1.5f;
+
 	// The game frees entities (OneShots, the SFX entity) right after unregistering them while a last buffer of
 	// their voices can still render, and an ID isn't guaranteed to be an entity at all, so every read of game
 	// memory is SEH-guarded (no C++ objects in these functions).
@@ -151,6 +157,20 @@ namespace objects
 	{
 		__try {
 			value = *reinterpret_cast<const uint64_t*>(address);
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+	}
+
+	static bool ReadPosition(uint64_t entity, float* xyz)
+	{
+		__try {
+			const float* p = reinterpret_cast<const float*>(entity + game::audio_entity::kPosition);
+			xyz[0] = p[0];
+			xyz[1] = p[1];
+			xyz[2] = p[2];
 			return true;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -218,21 +238,26 @@ namespace objects
 		// also whatever else the component fires). Before the component is known, the footstep handles reveal
 		// it: the handle's owner has the player's name.
 		uint64_t handle = 0;
-		if (!ReadU64(entity + game::one_shot::kOwnerHandle, handle) || !IsPointer(handle)) {
-			return false;
-		}
-		if (gPlayerComponent && handle >= gPlayerComponent && handle < gPlayerComponent + game::actor_audio::kSize) {
-			return true;
-		}
-		for (const size_t offset : { game::actor_audio::kLeftFootstep, game::actor_audio::kRightFootstep }) {
-			const uint64_t component = handle - offset;
-			uint32_t owner = 0;
-			if (ReadU32(component + game::actor_audio::kEntityBase + game::audio_entity::kName, owner) && owner == game::kPlayerNameUID) {
-				LearnPlayerComponent(component);
+		if (ReadU64(entity + game::one_shot::kOwnerHandle, handle) && IsPointer(handle)) {
+			if (gPlayerComponent && handle >= gPlayerComponent && handle < gPlayerComponent + game::actor_audio::kSize) {
 				return true;
 			}
+			for (const size_t offset : { game::actor_audio::kLeftFootstep, game::actor_audio::kRightFootstep }) {
+				const uint64_t component = handle - offset;
+				uint32_t owner = 0;
+				if (ReadU32(component + game::actor_audio::kEntityBase + game::audio_entity::kName, owner) && owner == game::kPlayerNameUID) {
+					LearnPlayerComponent(component);
+					return true;
+				}
+			}
 		}
-		return false;
+		// Not fired by the component: is it at the player's position?
+		float player[3], shot[3];
+		if (!gPlayerComponent || !ReadPosition(gPlayerComponent + game::actor_audio::kEntityBase, player) || !ReadPosition(entity, shot)) {
+			return false;
+		}
+		const float dx = shot[0] - player[0], dy = shot[1] - player[1], dz = shot[2] - player[2];
+		return dx * dx + dy * dy + dz * dz < kNearPlayerMeters * kNearPlayerMeters;
 	}
 
 	// ---- Insert effects on the bus chain ----

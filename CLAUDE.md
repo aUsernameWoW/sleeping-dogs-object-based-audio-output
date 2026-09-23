@@ -23,7 +23,9 @@ Status (2026-09-22):
   over-the-shoulder camera). His voices are now identified by game object and kept in the bed
   (`PlayerInBed`, HUD green). First test: vault/climb sounds went green (the component's own entity), the
   footsteps stayed cyan: they play on pooled `OneShot` entities, now matched through their owner handle.
-  Second test pending.
+  Second test: "near perfect"; only the 2-3 transition steps when walking↔sprinting (L-Shift) stayed cyan.
+  Those one-shots are fired by action-tree audio tasks (handle inside the task), so one-shots within 1.5 m
+  of the player's audio entity now count as his too. Third test pending.
 - Same day, first log with the router changes: demotions per 5 s fell from ~47 to 0-4. Only one bus carries
   an effect: a top-level bus (id 1900298039, feeds the final mix) with a Parametric EQ; the master has none.
   `BusFx = 1` had pushed everything under it into the bed (3/20 objects on the HUD), so objects now run that
@@ -177,7 +179,11 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
   `UFG::OneShot` entities** (0x170 bytes, `gOneShotPool`, named "OneShot_%3u" with pool index + 100) that
   `ActorAudioComponent::PlayFootstep` fires through the component's `m_leftFootstep`/`m_rightFootstep`
   handles (+0x1C0/+0x1C8); `OneShot::m_pOwnerHandle` (+0x158) points back at that handle, which is how the
-  router attributes them (footsteps at r 2.6-3.1 m, phi -24..-31°, gain 0.249).
+  router attributes them (footsteps at r 2.6-3.1 m, phi -24..-31°, gain 0.249). Other one-shot users
+  (`OneShotPool::GetOneShotHandle` xrefs): action-tree `AudioTask`/`AudioTaskSimple::PlayOnOneShot`
+  (animation-driven sounds such as the sprint transition steps), `StateMachineComponent`, `DamageRig`,
+  gunshots, fight impacts, vehicle impacts, VFX; their handles live in those systems, so the router falls
+  back to distance from the player's entity (`AudioEntity::m_WorldMatrix` row 3 at +0x50).
 - **Plugin IDs** are `type | company << 4 | index << 16` (company is 12 bits). The one bus effect seen so far
   is 0x690003 = Parametric EQ on a top-level bus.
 - **Listener** (`UFG::AudioListener`, singleton `sm_pInstance` RVA 0x2175E30; `Update` at 0x14014d410):
@@ -195,9 +201,8 @@ small shifts (e.g. `CAkMixer::Mix3D` -0x20, `CAkSinkXAudio2::PassData` -0x10, `R
 4. Dynamic objects — built, awaiting in-game test. Watch: object loudness vs original (objects skip bus FX,
    e.g. a master limiter or slow-motion filters on buses), audible jumps on promotion/demotion, activation
    failures, whether 20 objects are enough in fights.
-5. Next: confirm in-game (a) Wei's footsteps now green (log "player audio component ..."), (b) the EQ bus
-   logged as "[applied to objects]" with objects back to normal counts, and no audible timbre difference
-   between object and bed (F9 A/B on a sound under that bus). Then: detailed listening session (A/B with F9), NPC voice height (feet vs head),
+5. Next: confirm in-game that the sprint transition steps are green too, and that objects and bed sound the
+   same on the EQ'd bus (F9 A/B; the EQ bus was logged "[applied to objects]" in test 2). Then: detailed listening session (A/B with F9), NPC voice height (feet vs head),
    radar check. Possible experiment: flip the game's own `m_positionListenerAtCamera` to hear the
    listener-at-player hybrid.
 6. Later: stereo 3D voices (two objects), multi-position emitters, per-category rules (e.g. always objects for
