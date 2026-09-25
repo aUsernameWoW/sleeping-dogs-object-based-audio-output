@@ -122,7 +122,16 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   `.asi` + `.pdb`; on `main` a second job publishes them with `THIRD-PARTY-NOTICES.md` (licenses of the
   code compiled in; keep it in step with the dependencies) as prerelease `build-<N>` (N = commit count). Bump
   the pins when `reference\` moves; `.github/dependabot.yml` proposes updates for the SHA-pinned actions
-  monthly.
+  monthly. A third job uploads the same build to [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)
+  as the next version of the "SDAtmos GitHub CI Build" file: a zip with `plugins\SDAtmos.asi` + the notices,
+  version `build-<N>`, previous version archived.
+- `.github/workflows/nexus-release.yml` — a **release** is a `build-<N>` prerelease un-ticked as prerelease on
+  GitHub (nothing is rebuilt); it goes to the main file "SDAtmos" on Nexus (created through the API on the
+  first release). Both Nexus jobs are copies of SDIMEFix's, which documents how they work (`mods\SDIMEFix\CLAUDE.md`);
+  keep them in step. Settings: repo variables `NEXUS_MOD_ID`, `NEXUS_CI_FILE_ID`, `NEXUS_RELEASE_FILE_ID`
+  (v3 IDs from a file's "Advanced" dialog, not the `173` in the URL) and secret `NEXUSMODS_API_KEY`. Current
+  values: mod `14933601288365`, CI file `8026248`, release file not created yet (set the variable to its
+  "File ID" after the first release).
 - `assets/` — `banner.png` (README header and the GitHub social preview, 1280×640, keep under 1 MB) and
   `icon.png` (512×512, transparent corners), both rendered from `assets/branding/logo.html` the same way as
   SDIMEFix's (`?export=banner` / `?export=icon` in headless Edge, `--screenshot --window-size=W,H
