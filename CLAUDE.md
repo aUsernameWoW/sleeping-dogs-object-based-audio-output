@@ -123,6 +123,15 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   code compiled in; keep it in step with the dependencies) as prerelease `build-<N>` (N = commit count). Bump
   the pins when `reference\` moves; `.github/dependabot.yml` proposes updates for the SHA-pinned actions
   monthly.
+- `assets/` — `banner.png` (README header and the GitHub social preview, 1280×640, keep under 1 MB) and
+  `icon.png` (512×512, transparent corners), both rendered from `assets/branding/logo.html` the same way as
+  SDIMEFix's (`?export=banner` / `?export=icon` in headless Edge, `--screenshot --window-size=W,H
+  --default-background-color=00000000 --virtual-time-budget=10000`). Same family look (game menu parts
+  redrawn in CSS/SVG, no game art embedded) with the HUD's object cyan instead of amber; the radar and icon
+  dome are drawn by the page's script from a real 7.1.4 layout. No Dolby logo or "全景声" wording, so it
+  doesn't read as an official Dolby product. `assets/screenshots/` holds the README's in-game shots with the
+  F8 HUD (Steam F12 captures: ReShade's own screenshot key saves before its UI layer is drawn, so it misses
+  the HUD).
 - `.claude/settings.json` — Claude Code plugins for this repo: `clangd-lsp` (reads
   `build\compile_commands.json` from the workspace's `tools\compile-commands.ps1`), `microsoft-docs`
   (Win32/WASAPI/ISAC reference), `ida-pro-mcp` (game binary).

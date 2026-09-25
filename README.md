@@ -1,5 +1,20 @@
 # Sleeping Dogs: Definitive Edition — object-based audio output (SDAtmos)
 
+![SDAtmos: 聲臨其境 in glowing cyan beside a wireframe 7.1.4 dome over the listener, with sound objects floating at their height](assets/banner.png)
+
+![A rainy street at night with objects 1, 2, 3 and 6 marked next to motorbikes and a car; the radar shows 12 objects](assets/screenshots/street-rain.jpg)
+
+雨夜街头：摩托车和汽车的引擎各自是一个对象，雷达上的对象分布在四周。<br>
+A rainy street at night: the motorbike and car engines are separate objects, spread all around on the radar.
+
+![Indoors: object 2 at about the listener's height, object 4 at the ceiling light above the doorway](assets/screenshots/interior-height.jpg)
+
+同一平面和不同高度的对象：对象 2 大致与听者同高，对象 4 在门口上方的天花板灯处，雷达上它的点带着向上的短杆。<br>
+Same plane and a different height: object 2 is at about the listener's height, object 4 at the ceiling light above the doorway; its radar dot has an upward stick.
+
+F8 HUD：青色圈 = 对象的方向；雷达以听者为中心，编号是对象槽位，点上的短杆表示声音在听者上方（向上）或下方（向下）。<br>
+The F8 HUD: cyan rings = object directions; the radar is centered on the listener, numbers are object slots, and a stick on a dot means above (up) or below (down) the listener.
+
 [![Build](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/actions/workflows/build.yml/badge.svg)](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/actions/workflows/build.yml)
 
 [中文](#中文) | [English](#english)
