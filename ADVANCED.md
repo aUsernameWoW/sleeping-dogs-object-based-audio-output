@@ -47,8 +47,8 @@ hook 点：
 
 ### 需求
 
-- 《热血无赖：终极版》Steam 版当前版本，Windows 10/11 x64。旧版 v1.0 应该也可以（特征码就取自它），但没有在
-  游戏里测试过。
+- 《热血无赖：终极版》的两个发行版本：当前版本（在游戏里验证过）和旧版 v1.0（特征码就取自它），Windows 10/11
+  x64。
 - 为输出设备启用一种空间音效格式（Windows 声音设置 → 空间音效）：HDMI 回音壁/功放用 Dolby Atmos for home
   theater（Dolby Access 应用），或 DTS:X / Windows Sonic。
 - 任意 ASI 加载器，例如 [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)（`SDAtmos.zip`
@@ -163,8 +163,8 @@ routing policy, the reverse-engineering workflow, testing and log reading. Start
 
 ### Requirements
 
-- Sleeping Dogs: Definitive Edition, current Steam version, Windows 10/11 x64. The legacy v1.0 build should
-  work too (the signatures come from it) but hasn't been tested in game.
+- Both released builds of Sleeping Dogs: Definitive Edition: the current one (verified in game) and the
+  legacy v1.0 (the signatures come from it), Windows 10/11 x64.
 - A spatial sound format enabled for the output device (Windows Sound settings → Spatial sound): Dolby Atmos
   for home theater (Dolby Access app) for an HDMI receiver/soundbar, or DTS:X / Windows Sonic.
 - Any ASI loader, e.g. [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)

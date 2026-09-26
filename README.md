@@ -25,13 +25,12 @@ Same plane and a different height: object 2 is at about the listener's height, o
 
 状态：**实验性**。在作者的环境里（HDMI 连接的全景声回音壁）工作正常。
 
-> 适用于 **Steam 版的当前版本**，Windows 10/11 64 位。其他版本没有测试过；如果 mod 认不出你的游戏版本，它会
-> 自动不生效，游戏声音和原来一样。想了解原理、自己编译，或已经装过其他 mod，请看 [ADVANCED.md](ADVANCED.md)。
+> 适用于**任何版本**的《热血无赖：终极版》，Windows 10/11 64 位。想了解原理、自己编译，或已经装过其他 mod，
+> 请看 [ADVANCED.md](ADVANCED.md)。
 
 ### 你需要什么
 
-**Windows 的「空间音效」必须打开**，也就是不能是默认的「关」。这是最重要的一步：空间音效关着的时候，mod
-什么都不做，游戏照常用原来的声音输出（不会出问题，只是没有效果）。
+**Windows 的「空间音效」必须打开**，也就是不能是默认的「关」。这是最重要的一步，不开就没有效果。
 
 根据你用的设备选一种：
 
@@ -122,10 +121,6 @@ SleepingDogsDefinitiveEdition\
   在同一层，杀毒软件有没有删掉它（ASI 加载器偶尔会被误报，可以从隔离区还原并把游戏文件夹加入排除项）；
   如果第 4 步跳过了原有的 `dinput8.dll`，那个文件可能不是 ASI 加载器，备份后换成压缩包里的。
 
-**日志里有 “MISSING”**
-
-mod 认不出你的游戏版本，这部分功能没有启用，游戏声音不受影响。请把日志发给作者（见下面）。
-
 **想用 F8 雷达，或者在游戏里调设置**
 
 需要安装带完整插件支持的 ReShade（安装包名字里有 “Addon”），目前只支持 **ReShade 6.8.0**。装好后按 Home
@@ -163,15 +158,13 @@ Makes Sleeping Dogs: Definitive Edition output real **spatial audio**: an Atmos 
 
 Status: **experimental**. It works on the author's setup (an Atmos soundbar over HDMI).
 
-> For the **current Steam version**, Windows 10/11 64-bit. Other versions are untested; if the mod doesn't
-> recognize your game version it turns itself off and the game sounds as before. For how it works, building it,
-> or adding it to an existing mod setup, see [ADVANCED.md](ADVANCED.md).
+> Works with **any version** of Sleeping Dogs: Definitive Edition, Windows 10/11 64-bit. For how it works,
+> building it, or adding it to an existing mod setup, see [ADVANCED.md](ADVANCED.md).
 
 ### What you need
 
 **Windows "Spatial sound" must be turned on**, i.e. not left at its default, Off. This is the most important
-step: with spatial sound off, the mod does nothing and the game uses its normal audio output (nothing
-breaks, there's just no effect).
+step; without it the mod has no effect.
 
 Pick one for your device:
 
@@ -264,11 +257,6 @@ The `plugins` folder also gets `SDAtmos.ini` and `SDAtmos.log`, which shows the 
   `sdhdship.exe` and that your antivirus didn't remove it (ASI loaders are sometimes flagged by mistake;
   restore it from quarantine and exclude the game folder). If you skipped an existing `dinput8.dll` in step 4,
   that file may not be an ASI loader; move it somewhere safe and use the one from the zip.
-
-**The log says "MISSING"**
-
-The mod doesn't recognize your game version, so that part stays off and the game's sound is unaffected. Please
-send the log to the author (see below).
 
 **Using the F8 radar or changing settings in game**
 
