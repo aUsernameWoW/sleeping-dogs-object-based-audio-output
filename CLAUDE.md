@@ -146,7 +146,8 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   redrawn in CSS/SVG, no game art embedded) with the HUD's object cyan instead of amber; the radar and icon
   dome are drawn by the page's script from a real 7.1.4 layout. No Dolby logo or "全景声" wording, so it
   doesn't read as an official Dolby product. `assets/screenshots/` holds the README's Windows spatial sound
-  settings shot (cropped, 128-color PNG) and its in-game shots with the F8 HUD (Steam F12 captures: ReShade's own screenshot key saves before its UI layer is drawn, so it misses
+  settings shot (the Win+Ctrl+V "Sound output" panel, uncropped: its header shows the shortcut the README
+  tells players to press; 256-color PNG) and its in-game shots with the F8 HUD (Steam F12 captures: ReShade's own screenshot key saves before its UI layer is drawn, so it misses
   the HUD).
 - `.claude/settings.json` — Claude Code plugins for this repo: `clangd-lsp` (reads
   `build\compile_commands.json` from the workspace's `tools\compile-commands.ps1`), `microsoft-docs`

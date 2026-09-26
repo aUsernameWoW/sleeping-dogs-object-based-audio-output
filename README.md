@@ -45,14 +45,16 @@ Same plane and a different height: object 2 is at about the listener's height, o
 
 1. 用 Dolby 或 DTS 的格式的话，先在 Microsoft Store 里安装对应的应用（Dolby Access 或 DTS Sound Unbound），
    打开它并按提示设置好你的设备。用 Windows Sonic 的话跳过这一步。
-2. 打开「设置」→「系统」→「声音」，点你正在用的输出设备（回音壁/功放通常显示为它的名字，或 “HDMI”
-   “Display Audio”；耳机就点耳机）。
-3. 找到「空间音效」（Spatial sound），把它从「关」（Off）改成下图中**除了「关」以外的任意一项**：
+2. 按 **Win + Ctrl + V**，打开「声音输出」面板。确认选中的是你正在用的设备（回音壁/功放通常显示为它的名字，
+   或 “HDMI”“Display Audio”；耳机就选耳机）。
+3. 在「空间音效」（Spatial sound）里，把「关」（Off）改成下图中**除了「关」以外的任意一项**：
 
-   ![Windows 11 声音设置中的「空间音效」选项：关、Dolby Atmos for Home Theater、Windows Sonic for Headphones、Dolby Atmos for Headphones、DTS Headphone:X、DTS:X for home theater](assets/screenshots/windows-spatial-sound.png)
+   ![Windows 11 的「声音输出」面板，标题旁是快捷键 Win + Ctrl + V；「空间音效」选项：关、Dolby Atmos for Home Theater、Windows Sonic for Headphones、Dolby Atmos for Headphones、DTS Headphone:X、DTS:X for home theater](assets/screenshots/windows-spatial-sound.png)
 
    你的列表可能比图里短，只会列出这台设备支持、并且已经装了对应应用的格式。
-4. 确认这个设备是默认输出设备（「声音」页面最上面选中的那个）。
+
+   Windows 10，或者快捷键不起作用时：打开「设置」→「系统」→「声音」，点你的设备，在「空间音效」里改，并确认
+   它是默认输出设备。
 
 **第 2 步：下载**
 
@@ -179,14 +181,16 @@ Pick one for your device:
 
 1. For a Dolby or DTS format, first install its app from the Microsoft Store (Dolby Access or DTS Sound
    Unbound), open it and follow its setup for your device. For Windows Sonic, skip this.
-2. Open Settings → System → Sound and click the output device you use (a soundbar/receiver shows by its name,
-   or as "HDMI" / "Display Audio"; for headphones, click the headphones).
-3. Find "Spatial sound" and change it from Off to **anything in this list except Off**:
+2. Press **Win + Ctrl + V** to open the "Sound output" panel. Make sure the device you use is selected (a
+   soundbar/receiver shows by its name, or as "HDMI" / "Display Audio"; for headphones, pick the headphones).
+3. Under "Spatial sound", change Off to **anything in this list except Off**:
 
-   ![The "Spatial sound" options in Windows 11 Sound settings: Off, Dolby Atmos for Home Theater, Windows Sonic for Headphones, Dolby Atmos for Headphones, DTS Headphone:X, DTS:X for home theater](assets/screenshots/windows-spatial-sound.png)
+   ![The Windows 11 "Sound output" panel, with its Win + Ctrl + V shortcut next to the title; the "Spatial sound" options: Off, Dolby Atmos for Home Theater, Windows Sonic for Headphones, Dolby Atmos for Headphones, DTS Headphone:X, DTS:X for home theater](assets/screenshots/windows-spatial-sound.png)
 
    Your list may be shorter: it only shows formats the device supports and whose app is installed.
-4. Make sure the device is the default output device (the one selected at the top of the Sound page).
+
+   On Windows 10, or if the shortcut does nothing: open Settings → System → Sound, click your device, change
+   "Spatial sound" there, and make sure it is the default output device.
 
 **Step 2: download**
 
