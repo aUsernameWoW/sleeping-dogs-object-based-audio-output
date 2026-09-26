@@ -1,7 +1,7 @@
 # Builds SDAtmos.asi and runs the automated tests, the way tools\build.ps1 -Test does in the modding
 # workspace. The .vcxproj reads its third-party headers/libs from ..\..\reference, so the job recreates that
-# layout: this repo in mods\SDAtmos, ReShade in reference\reshade, MinHook in reference\minhook.
-# Every push to main that passes is then published as a prerelease.
+# layout: this repo in mods\SDAtmos, ReShade in reference\reshade, MinHook in reference\minhook, at the commits
+# in .github/reference.env. Every push to main that passes is then published as a prerelease.
 name: Build
 
 on:
@@ -18,13 +18,6 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  # The commits reference\ is built from; together they key the reference\ cache.
-  # Keep in step with reference\reshade: ReShade only accepts add-ons built against its own ImGui version.
-  RESHADE_REF: 18deaa52de0c425a78b329e9cb3c497281cd00ec # v6.8.0
-  # Upstream MinHook, compiled from source into the .asi.
-  MINHOOK_REF: c3fcafdc10146beb5919319d0683e44e3c30d537 # v1.3.4
 
 jobs:
   build:
@@ -45,6 +38,11 @@ jobs:
           path: mods/SDAtmos
           persist-credentials: false
 
+      # RESHADE_REF etc. for the steps below. The pins live outside this file so that reference.yml can move
+      # them (the workflow token may not change workflow files).
+      - name: Read the reference\ pins
+        run: Get-Content .github/reference.env | Where-Object { $_ -match '^\w+=' } | Add-Content $env:GITHUB_ENV
+
       # reference\ only changes when a pin moves, so a hit skips the checkouts below.
       - name: Restore reference\ from cache
         id: reference
@@ -54,7 +52,7 @@ jobs:
           key: reference-reshade-${{ env.RESHADE_REF }}-minhook-${{ env.MINHOOK_REF }}
 
       # The add-on API needs only include\ and the ImGui submodule; blob:none fetches just their files.
-      - name: Check out ReShade 6.8.0
+      - name: Check out ReShade
         if: steps.reference.outputs.cache-hit != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,7 +70,7 @@ jobs:
         working-directory: reference/reshade
         run: git submodule update --init --depth 1 deps/imgui
 
-      - name: Check out MinHook 1.3.4
+      - name: Check out MinHook
         if: steps.reference.outputs.cache-hit != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,14 +98,17 @@ jobs:
           & "$vs\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
           $asi = (Resolve-Path build\Release\SDAtmos.asi).Path
           $out = (New-Item -ItemType Directory -Force build\tests).FullName
+          # Each test is its own program, so they compile side by side (the runspaces share the dev shell's
+          # environment); each compiler output is printed afterwards as one block.
+          $compiles = Get-ChildItem tests -Filter *.cc | ForEach-Object -ThrottleLimit ([Environment]::ProcessorCount) -Parallel {
+              Set-Location $using:out
+              $log = cl /nologo /EHsc /W3 /std:c++20 /utf-8 $_.FullName 2>&1
+              [pscustomobject]@{ Name = $_.Name; Ok = $LASTEXITCODE -eq 0; Log = $log | Out-String }
+          } | Sort-Object Name
+          $compiles | ForEach-Object { Write-Host $_.Log.TrimEnd() }
+          $broken = @($compiles | Where-Object { -not $_.Ok } | ForEach-Object Name)
+          if ($broken) { throw "Failed to compile $($broken -join ', ')" }
           $failed = @()
-          foreach ($src in Get-ChildItem tests -Filter *.cc) {
-              Push-Location $out
-              cl /nologo /EHsc /W3 /std:c++20 /utf-8 $src.FullName
-              $compiled = $LASTEXITCODE -eq 0
-              Pop-Location
-              if (-not $compiled) { throw "Failed to compile $($src.Name)" }
-          }
           foreach ($src in Get-ChildItem tests -Filter *_test.cc) {
               Write-Host "== $($src.BaseName)"
               # Run next to a private copy so the test writes its .ini/.log there, not in build\Release.
@@ -147,10 +148,18 @@ jobs:
           name: SDAtmos
           path: dist
 
+      # The loader is downloaded once per pin, so builds don't depend on the upstream release asset staying
+      # available. A cached copy is checked against the pinned SHA-256 like a fresh download.
+      - name: Restore the ASI loader from cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: loader.zip
+          key: asi-loader-${{ hashFiles('.github/asi-loader.env') }}
+
       - name: Package SDAtmos.zip
         run: |
           . .github/asi-loader.env
-          curl -sSfL --retry 3 -o loader.zip "$ASI_LOADER_URL"
+          [ -f loader.zip ] || curl -sSfL --retry 3 -o loader.zip "$ASI_LOADER_URL"
           echo "$ASI_LOADER_SHA256  loader.zip" | sha256sum -c -
           mkdir -p package/plugins
           unzip -j loader.zip '*dinput8.dll' -d package

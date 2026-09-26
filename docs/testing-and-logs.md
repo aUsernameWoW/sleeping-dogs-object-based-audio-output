@@ -28,13 +28,16 @@ blocks would make one feasible.
 CI: `.github/workflows/build.yml` runs the same build and tests on GitHub Actions for pushes to main and for
 pull requests (changes that only touch Markdown or `docs\` are skipped). The runner image is
 `windows-2025-vs2026`: Visual Studio 2026 with the v143 toolset (MSVC 14.44) installed alongside, the same
-compiler as a local VS 2022 17.14. The job recreates the workspace layout from pinned commits (ReShade v6.8.0
-with its `deps/imgui` submodule, MinHook v1.3.4; sparse checkouts cached under the pins), builds with
+compiler as a local VS 2022 17.14. The job recreates the workspace layout from the commits pinned in
+`.github/reference.env` (ReShade v6.8.0 with its `deps/imgui` submodule, MinHook v1.3.4; sparse checkouts
+cached under the pins), builds with
 `-warnAsError` so a new warning fails the run, and uploads `SDAtmos.asi` + `SDAtmos.pdb` as the run's
 artifact. Every passing push to main is also published as prerelease `build-<N>` with those two files and
-`THIRD-PARTY-NOTICES.md`. When something the
-project uses in `reference\` moves, bump the matching pin in the workflow. Actions are pinned by commit SHA;
-Dependabot (`.github/dependabot.yml`) proposes updates monthly, a week after each release.
+`THIRD-PARTY-NOTICES.md`. `.github/workflows/reference.yml` checks monthly for a newer ReShade or MinHook
+release and opens a PR moving the pin, a week after the release; when something the project uses in
+`reference\` moves first, bump the matching pin in `reference.env` by hand (`tools\build.ps1` warns while
+they differ). Actions are pinned by commit SHA; Dependabot (`.github/dependabot.yml`) proposes updates
+monthly, a week after each release.
 
 ## In-game procedure
 

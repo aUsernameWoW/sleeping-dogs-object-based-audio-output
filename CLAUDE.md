@@ -117,17 +117,20 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   cache saturation against fake nodes), `tests/spatial_orbit_manual.cc` (standalone ISAC check:
   `--probe` prints limits, otherwise plays a circling object).
 - `.github/workflows/build.yml` — CI on GitHub Actions (`windows-2025-vs2026`): recreates the workspace
-  layout from pinned commits (`env:` `RESHADE_REF` = v6.8.0 + `deps/imgui`, `MINHOOK_REF` = v1.3.4; sparse
-  checkouts, cached under the pins), builds Release x64 with `-warnAsError`, runs `tests\*_test.cc`, uploads
+  layout from the commits pinned in `.github/reference.env` (`RESHADE_REF` = v6.8.0 + `deps/imgui`,
+  `MINHOOK_REF` = v1.3.4; sparse checkouts, cached under the pins), builds Release x64 with `-warnAsError`,
+  runs `tests\*_test.cc` (compiled in parallel), uploads
   `.asi` + `.pdb`; a `package` job (PRs too) builds `SDAtmos.zip` for players (Ultimate ASI Loader as
   `dinput8.dll`, pinned in `.github/asi-loader.env`, + `plugins\SDAtmos.asi` + notices); on `main` the next
   job publishes the zip, `.asi`, `.pdb` and `THIRD-PARTY-NOTICES.md` (licenses of the code compiled in and of
   the bundled loader; keep it in step with the dependencies) as prerelease `build-<N>` (N = commit count),
-  plain names so README.md can link `releases/latest/download/SDAtmos.zip`. Bump the pins when `reference\`
-  moves; `.github/dependabot.yml` proposes updates for the SHA-pinned actions monthly, `asi-loader.yml` a PR
-  for a new loader release. A last job uploads the zip to [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)
+  plain names so README.md can link `releases/latest/download/SDAtmos.zip`. `reference.yml` proposes newer
+  pins in PRs (a new ReShade tag fails the build on `core/overlay.cc`'s `IMGUI_VERSION_NUM` assert until
+  it is moved); bump them yourself when `reference\` moves first. `.github/dependabot.yml` proposes updates
+  for the SHA-pinned actions monthly, `asi-loader.yml` a PR for a new loader release. A last job uploads the zip to [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)
   as the next version of the "SDAtmos GitHub CI Build" file, version `build-<N>`, previous version archived.
-  The packaging and loader-update jobs are copies of SDIMEFix's (documented in `mods\SDIMEFix\CLAUDE.md`).
+  The packaging, loader-update and reference-update jobs are copies of SDIMEFix's (documented in
+  `mods\SDIMEFix\CLAUDE.md`).
 - `README.md` — for players with no modding experience (what it does, turning on Windows spatial sound with
   `assets/screenshots/windows-spatial-sound.png`, step-by-step install of `SDAtmos.zip`, keys, FAQ); keep
   build/internals out of it. `ADVANCED.md` — everything else (how it works, downloads, settings keys, HUD
