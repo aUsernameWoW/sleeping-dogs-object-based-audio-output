@@ -119,27 +119,34 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
 - `.github/workflows/build.yml` — CI on GitHub Actions (`windows-2025-vs2026`): recreates the workspace
   layout from pinned commits (`env:` `RESHADE_REF` = v6.8.0 + `deps/imgui`, `MINHOOK_REF` = v1.3.4; sparse
   checkouts, cached under the pins), builds Release x64 with `-warnAsError`, runs `tests\*_test.cc`, uploads
-  `.asi` + `.pdb`; on `main` a second job publishes them with `THIRD-PARTY-NOTICES.md` (licenses of the
-  code compiled in; keep it in step with the dependencies) as prerelease `build-<N>` (N = commit count). Bump
-  the pins when `reference\` moves; `.github/dependabot.yml` proposes updates for the SHA-pinned actions
-  monthly. A third job uploads the same build to [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)
-  as the next version of the "SDAtmos GitHub CI Build" file: a zip with `plugins\SDAtmos.asi` + the notices,
-  version `build-<N>`, previous version archived.
+  `.asi` + `.pdb`; a `package` job (PRs too) builds `SDAtmos.zip` for players (Ultimate ASI Loader as
+  `dinput8.dll`, pinned in `.github/asi-loader.env`, + `plugins\SDAtmos.asi` + notices); on `main` the next
+  job publishes the zip, `.asi`, `.pdb` and `THIRD-PARTY-NOTICES.md` (licenses of the code compiled in and of
+  the bundled loader; keep it in step with the dependencies) as prerelease `build-<N>` (N = commit count),
+  plain names so README.md can link `releases/latest/download/SDAtmos.zip`. Bump the pins when `reference\`
+  moves; `.github/dependabot.yml` proposes updates for the SHA-pinned actions monthly, `asi-loader.yml` a PR
+  for a new loader release. A last job uploads the zip to [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)
+  as the next version of the "SDAtmos GitHub CI Build" file, version `build-<N>`, previous version archived.
+  The packaging and loader-update jobs are copies of SDIMEFix's (documented in `mods\SDIMEFix\CLAUDE.md`).
+- `README.md` — for players with no modding experience (what it does, turning on Windows spatial sound with
+  `assets/screenshots/windows-spatial-sound.png`, step-by-step install of `SDAtmos.zip`, keys, FAQ); keep
+  build/internals out of it. `ADVANCED.md` — everything else (how it works, downloads, settings keys, HUD
+  colors, building, CI). Both bilingual (Chinese first).
 - `.github/workflows/nexus-release.yml` — a **release** is a `build-<N>` prerelease un-ticked as prerelease on
   GitHub (nothing is rebuilt); it goes to the main file "SDAtmos" on Nexus (created through the API on the
   first release). Both Nexus jobs are copies of SDIMEFix's, which documents how they work (`mods\SDIMEFix\CLAUDE.md`);
   keep them in step. Settings: repo variables `NEXUS_MOD_ID`, `NEXUS_CI_FILE_ID`, `NEXUS_RELEASE_FILE_ID`
   (v3 IDs from a file's "Advanced" dialog, not the `173` in the URL) and secret `NEXUSMODS_API_KEY`. Current
-  values: mod `14933601288365`, CI file `8026248`, release file not created yet (set the variable to its
-  "File ID" after the first release).
+  values: mod `14933601288365`, CI file `8026248`; the release file was created by the build-24 release,
+  but `NEXUS_RELEASE_FILE_ID` isn't set yet (copy its "File ID" from the site).
 - `assets/` — `banner.png` (README header and the GitHub social preview, 1280×640, keep under 1 MB) and
   `icon.png` (512×512, transparent corners), both rendered from `assets/branding/logo.html` the same way as
   SDIMEFix's (`?export=banner` / `?export=icon` in headless Edge, `--screenshot --window-size=W,H
   --default-background-color=00000000 --virtual-time-budget=10000`). Same family look (game menu parts
   redrawn in CSS/SVG, no game art embedded) with the HUD's object cyan instead of amber; the radar and icon
   dome are drawn by the page's script from a real 7.1.4 layout. No Dolby logo or "全景声" wording, so it
-  doesn't read as an official Dolby product. `assets/screenshots/` holds the README's in-game shots with the
-  F8 HUD (Steam F12 captures: ReShade's own screenshot key saves before its UI layer is drawn, so it misses
+  doesn't read as an official Dolby product. `assets/screenshots/` holds the README's Windows spatial sound
+  settings shot (cropped, 128-color PNG) and its in-game shots with the F8 HUD (Steam F12 captures: ReShade's own screenshot key saves before its UI layer is drawn, so it misses
   the HUD).
 - `.claude/settings.json` — Claude Code plugins for this repo: `clangd-lsp` (reads
   `build\compile_commands.json` from the workspace's `tools\compile-commands.ps1`), `microsoft-docs`

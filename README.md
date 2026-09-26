@@ -9,201 +9,292 @@ A rainy street at night: the motorbike and car engines are separate objects, spr
 
 ![Indoors: object 2 at about the listener's height, object 4 at the ceiling light above the doorway](assets/screenshots/interior-height.jpg)
 
-同一平面和不同高度的对象：对象 2 大致与听者同高，对象 4 在门口上方的天花板灯处，雷达上它的点带着向上的短杆。<br>
-Same plane and a different height: object 2 is at about the listener's height, object 4 at the ceiling light above the doorway; its radar dot has an upward stick.
-
-F8 HUD：青色圈 = 对象的方向；雷达以听者为中心，编号是对象槽位，点上的短杆表示声音在听者上方（向上）或下方（向下）。<br>
-The F8 HUD: cyan rings = object directions; the radar is centered on the listener, numbers are object slots, and a stick on a dot means above (up) or below (down) the listener.
-
-[![Build](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/actions/workflows/build.yml/badge.svg)](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/actions/workflows/build.yml)
+同一平面和不同高度的对象：对象 2 大致与听者同高，对象 4 在门口上方的天花板灯处。<br>
+Same plane and a different height: object 2 is at about the listener's height, object 4 at the ceiling light above the doorway.
 
 [中文](#中文) | [English](#english)
 
 ## 中文
 
-让《热血无赖：终极版》通过 Windows 空间音频输出真正的对象音频：回音壁/功放显示 **Dolby Atmos**，而不是
-Dolby Audio。
+让《热血无赖：终极版》输出真正的**空间音频**：接全景声回音壁或功放时，显示的不再是 Dolby Audio，而是
+**Dolby Atmos**；戴耳机时，Windows 的耳机空间音效也能拿到每个声音的真实方向。
 
-游戏用 Wwise 2012 把声音混成 7.1 声道流。Windows 的 Dolby Atmos for home theater 不会做上混：声道流会被编码成
-Dolby Audio（DD/DD+）输出，只有调用 `ISpatialAudioClient` 的程序才会输出 Atmos。本 mod hook 了游戏内部的
-Wwise 引擎，改由 `ISpatialAudioClient` 输出：
+- 枪声、脚步、车辆、人声这些声音会从它们在游戏里的真实方向传来，包括上方和下方；
+- 雨声、雷声、风声、鸟叫和环境回响有一部分会从头顶传来；
+- 游戏原本的混音不变，只是每个声音的位置更准了。
 
-- **7.1 声道床**：游戏的最终混音作为静态床对象输出。接收端切换到 Atmos，听感和原来一样。
-- **动态对象**：每个 Wwise 帧，把最响的点状 3D 声音（枪声、脚步、车辆、人声）从声道床里取出来，把它们平移前的
-  信号作为动态对象送出，方向就用 Wwise 为它算好的方向，包括高度。原本的 7.1 声像器会把高度压平。环境声、混响、
-  spread 很大的声音这类扩散声仍留在床里；声音数量超过格式允许的对象数（HDMI 上为 20 个）时，多出来的并回床里，
-  这也是 Dolby 游戏音频指南推荐的做法。
-- **7.1.4 高度声道**：游戏本身没有高度内容，mod 在各条总线把输出交给上级总线的位置，把扩散类声音的一部分
-  抬到床的四个顶部声道：天气（雨、雷、风）和鸟叫抬得最多，其余环境声（城市、人群、水）和混响返回少一些；地面声道
-  相应减去同样的能量。抬上去的信号经过短延迟 + 全通 + 高通的去相关处理，前后两对不同，这是 Dolby/DTS 上混器和
-  Atmos 混音指南的通行做法。
-- **不绑定 Dolby**：对象上限、床布局和格式都在运行时向系统查询，所以 DTS:X for Home Theater、Windows Sonic 也走
-  同一条路径（目前只在 Dolby Atmos for home theater 上测试过）。
+状态：**实验性**。在作者的环境里（HDMI 连接的全景声回音壁）工作正常。
 
-状态：**实验性**。在作者的环境里游戏内工作正常，听感测试仍在进行。
+> 适用于 **Steam 版的当前版本**，Windows 10/11 64 位。其他版本没有测试过；如果 mod 认不出你的游戏版本，它会
+> 自动不生效，游戏声音和原来一样。想了解原理、自己编译，或已经装过其他 mod，请看 [ADVANCED.md](ADVANCED.md)。
 
-### 原理
+### 你需要什么
 
-安装版 Steam exe 不带符号。Wwise 函数靠字节特征码定位；特征码取自旧版 v1.0 exe 及其 PDB（来自 SDmodding
-项目）。Wwise 是静态链接的，两个版本里完全相同。hook 点：
+**Windows 的「空间音效」必须打开**，也就是不能是默认的「关」。这是最重要的一步：空间音效关着的时候，mod
+什么都不做，游戏照常用原来的声音输出（不会出问题，只是没有效果）。
 
-- `CAkSinkXAudio2::Init/PassData/PassSilence`：在 XAudio2 拿到之前取走最终混音。XAudio2 继续静音运行，
-  给 Wwise 当时钟。空间音频不可用时，游戏照旧走 XAudio2，不受影响。
-- `CAkLEngine::RunVPL` + `CAkVPLMixBusNode::ConsumeBuffer`：每个声音混入总线的位置。对于成为对象的声音，
-  mod 按 Wwise 本来会用的增益渐变（含总线音量）取出它的 PCM，再把 Wwise 自己的混音矩阵相应调低，让床里只剩
-  不属于对象的部分。在床和对象之间切换时，用一个 21 ms 的缓冲做交叉淡化。
+根据你用的设备选一种：
 
-完整设计说明和涉及的 Wwise 内部细节见 `CLAUDE.md`（英文）。
+- **全景声回音壁或功放**（用 HDMI 接到电脑上）：选 “Dolby Atmos for Home Theater”（需要 Microsoft Store 里的
+  免费应用 Dolby Access），或者 DTS:X 设备选 “DTS:X for home theater”；
+- **耳机**：选 “Windows Sonic for Headphones”（Windows 自带，免费），或者 “Dolby Atmos for Headphones”、
+  “DTS Headphone:X”（需要各自的应用）。
 
-### 需求
+### 安装（大约五分钟）
 
-- 《热血无赖：终极版》（Steam 当前版本），Windows 10/11 x64。
-- 为输出设备启用一种空间音效格式（Windows 声音设置 → 空间音效）：HDMI 回音壁/功放用 Dolby Atmos for home
-  theater（Dolby Access 应用），或 DTS:X / Windows Sonic。
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)（例如作为 `dinput8.dll`）。
-- 可选：支持插件的 [ReShade](https://reshade.me) 6.8.0，用于游戏内菜单和 HUD。
+**第 1 步：打开 Windows 的空间音效（一定要做）**
 
-### 安装
+1. 用 Dolby 或 DTS 的格式的话，先在 Microsoft Store 里安装对应的应用（Dolby Access 或 DTS Sound Unbound），
+   打开它并按提示设置好你的设备。用 Windows Sonic 的话跳过这一步。
+2. 打开「设置」→「系统」→「声音」，点你正在用的输出设备（回音壁/功放通常显示为它的名字，或 “HDMI”
+   “Display Audio”；耳机就点耳机）。
+3. 找到「空间音效」（Spatial sound），把它从「关」（Off）改成下图中**除了「关」以外的任意一项**：
 
-从 [Releases](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases) 下载最新的
-`SDAtmos.asi`（`main` 上每次提交都会自动编译、测试并发布为预发布版），放进游戏的 `plugins\` 文件夹。同样的构建也会发布到
-[Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)，压缩包解压到游戏目录即可。首次启动会在
-旁边生成带注释的 `SDAtmos.ini`（中英双语），日志写到 `SDAtmos.log`。
+   ![Windows 11 声音设置中的「空间音效」选项：关、Dolby Atmos for Home Theater、Windows Sonic for Headphones、Dolby Atmos for Headphones、DTS Headphone:X、DTS:X for home theater](assets/screenshots/windows-spatial-sound.png)
 
-游戏内：
+   你的列表可能比图里短，只会列出这台设备支持、并且已经装了对应应用的格式。
+4. 确认这个设备是默认输出设备（「声音」页面最上面选中的那个）。
 
-- **F9**：开关动态对象，用来和纯 7.1 声道床做 A/B 对比。
-- **F7**：开关高度声道（A/B 对比）。
-- **F8**：HUD（需要 ReShade）。显示所有带位置的声音的雷达图，并在画面上标出它们的方向。青色 = 对象，黄色 =
-  符合条件但在排队，灰色 = 留在床里，绿色 = 沈威自己的声音（留在床里，`PlayerInBed`），橙色 = 所在总线带插入
-  效果（留在床里，`BusFx`）。
-- ReShade 菜单 → **SDAtmos** 标签页：流状态、实时设置、声音列表、保存到 ini。
+**第 2 步：下载**
 
-### 文档
+点这里下载 **[SDAtmos.zip](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases/latest/download/SDAtmos.zip)**。
+也可以在 [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173?tab=files) 的 Files
+页面下载，内容相同。
 
-`docs\` 里有面向接手者的详细说明（英文）：架构与数据流、Wwise 2012.2 内部结构与偏移、游戏侧的音频实体/
-角色组件/听者、Windows 空间音频输出、对象路由策略、逆向流程、测试与日志解读。从 [docs/README.md](docs/README.md)
-开始。
+压缩包里只有这些：
 
-### 编译
+```text
+dinput8.dll                  ← Ultimate ASI Loader：让游戏加载 mod 的“加载器”
+plugins\
+    SDAtmos.asi              ← mod 本体
+    SDAtmos-THIRD-PARTY-NOTICES.md
+```
 
-Visual Studio 2022（v143），Windows SDK 10.0.26100。项目需要放在工作区的 `mods\SDAtmos`，工作区里还要有：
+**第 3 步：打开游戏文件夹**
 
-- `reference\reshade`：ReShade v6.8.0 源码，并初始化 `deps\imgui` 子模块。
-- `reference\minhook`：[MinHook](https://github.com/TsudaKageyu/minhook) v1.3.4 源码（随项目一起编译）。
+1. 打开 Steam，进入「库」。
+2. 在左侧列表里右键点「Sleeping Dogs: Definitive Edition」→「管理」→「浏览本地文件」。
+3. 弹出来的就是游戏文件夹，里面有 `sdhdship.exe`（如果电脑不显示扩展名，就是一个叫 `sdhdship` 的程序）。
 
-GitHub Actions 会对推送和 PR 按同样的布局编译并运行自动测试，依赖的确切版本见 `.github/workflows/build.yml`。
-推送到 `main` 且测试通过的构建会发布为预发布版 `build-<N>`，附带 `SDAtmos.asi` 和 `.pdb`，并作为新版本上传到
-Nexus Mods。
+**第 4 步：把文件放进去**
 
-### 致谢
+1. 双击打开下载的 `SDAtmos.zip`。
+2. 选中里面的 `dinput8.dll` 和 `plugins` 文件夹，一起拖进游戏文件夹。
+3. 如果 Windows 弹出「替换或跳过文件」，说明游戏文件夹里已经有 `dinput8.dll` 了（你以前装过别的 mod，
+   加载器已经在了），选「跳过该文件」。已有的 `plugins` 文件夹会自动合并，不用管。
 
-- [SDmodding](https://github.com/SDmodding)：旧版 PDB 和 SDK。
-- [MinHook](https://github.com/TsudaKageyu/minhook)。
-- [ReShade](https://github.com/crosire/reshade) 的插件 API 和 Dear ImGui。
+放好后，游戏文件夹里应该是这样（只列出相关的部分）：
 
-编译进 `SDAtmos.asi` 的第三方代码及其许可证见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+```text
+SleepingDogsDefinitiveEdition\
+    sdhdship.exe
+    dinput8.dll
+    plugins\
+        SDAtmos.asi
+```
+
+注意 `dinput8.dll` 要和 `sdhdship.exe` 在同一层，不要多套一层文件夹。
+
+**第 5 步：启动游戏，确认生效**
+
+照常从 Steam 启动游戏。
+
+- 用回音壁/功放的话，进入游戏后它的显示屏或指示灯应该显示 **Dolby Atmos**（或 DTS:X）；
+- 用耳机的话，打开游戏文件夹里的 `plugins\SDAtmos.log`，里面有一行 `spatial: stream started on ...`，就说明
+  已经在用空间音效输出了。
+
+另外，`plugins` 里多出 `SDAtmos.ini` 和 `SDAtmos.log` 两个文件，说明 mod 已经加载。
+
+### 游戏里的按键
+
+- **F9**：开关“声音对象”。按一下听原来的声音，再按一下切回来，方便对比。
+- **F7**：开关头顶声道（雨声、环境声抬到上方的那部分），同样用来对比。
+- **F8**：显示声音雷达和画面上的声音标记，就是上面截图里的样子（需要 ReShade，见下面）。
+
+### 常见问题
+
+**回音壁还是显示 Dolby Audio 或 PCM，不显示 Dolby Atmos；或者日志里没有 “stream started”**
+
+- 回到第 1 步，确认「空间音效」不是「关」（回音壁/功放要选 “Dolby Atmos for Home Theater” 才会显示 Atmos），
+  而且这个设备是**默认**输出设备；
+- 打开 `plugins\SDAtmos.log`，如果里面有 “has no spatial audio”，说明 Windows 对这个设备没有开空间音效；
+- 如果 `plugins` 里根本没有 `SDAtmos.log`，说明 mod 没被加载：检查 `dinput8.dll` 是否和 `sdhdship.exe`
+  在同一层，杀毒软件有没有删掉它（ASI 加载器偶尔会被误报，可以从隔离区还原并把游戏文件夹加入排除项）；
+  如果第 4 步跳过了原有的 `dinput8.dll`，那个文件可能不是 ASI 加载器，备份后换成压缩包里的。
+
+**日志里有 “MISSING”**
+
+mod 认不出你的游戏版本，这部分功能没有启用，游戏声音不受影响。请把日志发给作者（见下面）。
+
+**想用 F8 雷达，或者在游戏里调设置**
+
+需要安装带完整插件支持的 ReShade（安装包名字里有 “Addon”），目前只支持 **ReShade 6.8.0**。装好后按 Home
+打开 ReShade，里面有 **SDAtmos** 标签页，可以实时调整设置并保存。不装 ReShade 时声音部分照常工作。
+
+**想改设置**
+
+用记事本打开 `plugins\SDAtmos.ini`，改完保存，重启游戏。每一项都有中文说明。
+
+**更新**
+
+下载新的 `SDAtmos.zip`，只把里面的 `plugins` 文件夹拖进游戏文件夹，Windows 询问时选「替换目标中的文件」。
+`SDAtmos.ini` 不在压缩包里，你的设置会保留。
+
+**卸载**
+
+删掉 `plugins` 里的 `SDAtmos.asi`、`SDAtmos.ini` 和 `SDAtmos.log`。如果 `plugins` 里已经没有其他 `.asi`
+文件了，`dinput8.dll` 也可以删掉。
+
+**遇到问题怎么反馈**
+
+在 [GitHub Issues](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/issues) 或 Nexus
+Mods 页面的 Bugs 标签里说明情况（用的什么回音壁/功放/耳机、哪种空间音效），并附上 `plugins\SDAtmos.log`。
 
 与 Square Enix、United Front Games、Audiokinetic、Dolby、DTS、Microsoft 均无关联。
 
 ## English
 
-Makes Sleeping Dogs: Definitive Edition output real object audio through Windows spatial audio: the
-soundbar/receiver shows **Dolby Atmos** instead of Dolby Audio.
+Makes Sleeping Dogs: Definitive Edition output real **spatial audio**: an Atmos soundbar or receiver shows
+**Dolby Atmos** instead of Dolby Audio, and Windows' headphone spatial sound gets each sound's real direction.
 
-Sleeping Dogs mixes its audio with Wwise 2012 into a 7.1 channel stream. Windows' Dolby Atmos for home
-theater doesn't upmix: channel streams go out as Dolby Audio (DD/DD+), and only apps that use
-`ISpatialAudioClient` produce Atmos. This mod hooks the game's Wwise engine and plays the game through
-`ISpatialAudioClient` instead:
+- Gunshots, footsteps, vehicles and voices come from where they are in the game, above and below included;
+- part of the rain, thunder, wind, birds and room reverb comes from overhead;
+- the game's own mix stays the same; each sound is just placed more precisely.
 
-- **7.1 bed**: the game's final mix goes out as static bed objects. The receiver switches to Atmos and the
-  mix sounds as before.
-- **Dynamic objects**: each Wwise frame, the loudest point-like 3D sounds (gunshots, footsteps, vehicles,
-  voices) come out of the bed. Each one's pre-panning signal is sent as a dynamic object, positioned in the
-  direction Wwise computed for it, height included. The 7.1 panner used to flatten that height away.
-  Diffuse sounds (ambience, reverb, sounds with wide spread) stay in the bed. When there are more sounds than
-  the format allows objects (20 over HDMI), the extra ones fold into the bed, as Dolby's game guidelines
-  recommend.
-- **7.1.4 height channels**: the game has no height content of its own. Where each bus hands its output to
-  its parent, the mod moves a share of the diffuse material up into the bed's four top channels: weather
-  (rain, thunder, wind) and birds the most, the rest of the ambience (city, crowds, water) and reverb returns
-  less; the floor loses the same energy. The lifted signal is decorrelated (short delay + all-passes +
-  high-pass, front and back pairs different), which is what Dolby/DTS upmixers and Atmos mixing guides do.
-- **Nothing Dolby-specific**: object limits, bed layout and format are queried at runtime, so DTS:X for Home
-  Theater and Windows Sonic go through the same path (only Dolby Atmos for home theater has been tested).
+Status: **experimental**. It works on the author's setup (an Atmos soundbar over HDMI).
 
-Status: **experimental**. It works in-game on the author's setup. The listening tests are still under way.
+> For the **current Steam version**, Windows 10/11 64-bit. Other versions are untested; if the mod doesn't
+> recognize your game version it turns itself off and the game sounds as before. For how it works, building it,
+> or adding it to an existing mod setup, see [ADVANCED.md](ADVANCED.md).
 
-### How it works
+### What you need
 
-The installed Steam exe has no symbols. The Wwise functions are found by byte signatures, which were
-generated from the legacy v1.0 build and its PDB (from the SDmodding project). Wwise is statically linked
-and identical in both builds. The hooks:
+**Windows "Spatial sound" must be turned on**, i.e. not left at its default, Off. This is the most important
+step: with spatial sound off, the mod does nothing and the game uses its normal audio output (nothing
+breaks, there's just no effect).
 
-- `CAkSinkXAudio2::Init/PassData/PassSilence`: take the final mix before XAudio2 sees it. XAudio2 keeps
-  running silently as the clock that paces Wwise. If spatial audio isn't available, the game stays on XAudio2
-  unchanged.
-- `CAkLEngine::RunVPL` + `CAkVPLMixBusNode::ConsumeBuffer`: the point where each voice is mixed into its
-  bus. For voices that become objects, the mod takes the voice's PCM with the same gain ramp Wwise would
-  apply (including bus volumes). It then scales Wwise's own mix matrix down, so the bed gets only what isn't
-  an object. Moves between bed and object crossfade over one 21 ms buffer.
+Pick one for your device:
 
-See `CLAUDE.md` for the full design notes and the Wwise internals involved.
+- **An Atmos soundbar or receiver** (connected over HDMI): "Dolby Atmos for Home Theater" (needs the free
+  Dolby Access app from the Microsoft Store), or "DTS:X for home theater" for a DTS:X device;
+- **Headphones**: "Windows Sonic for Headphones" (built into Windows, free), or "Dolby Atmos for Headphones" /
+  "DTS Headphone:X" (each needs its app).
 
-### Requirements
+### Installing (about five minutes)
 
-- Sleeping Dogs: Definitive Edition (Steam, current build), Windows 10/11 x64.
-- A spatial sound format enabled for the output device (Windows Sound settings → Spatial sound): Dolby Atmos
-  for home theater (Dolby Access app) for an HDMI receiver/soundbar, or DTS:X / Windows Sonic.
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) (e.g. as `dinput8.dll`).
-- Optional: [ReShade](https://reshade.me) 6.8.0 with add-on support, for the in-game menu and HUD.
+**Step 1: turn on Windows spatial sound (don't skip this)**
 
-### Install
+1. For a Dolby or DTS format, first install its app from the Microsoft Store (Dolby Access or DTS Sound
+   Unbound), open it and follow its setup for your device. For Windows Sonic, skip this.
+2. Open Settings → System → Sound and click the output device you use (a soundbar/receiver shows by its name,
+   or as "HDMI" / "Display Audio"; for headphones, click the headphones).
+3. Find "Spatial sound" and change it from Off to **anything in this list except Off**:
 
-Download the latest `SDAtmos.asi` from
-[Releases](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases) (every commit on
-`main` is built, tested and published as a prerelease) and copy it into the game's `plugins\` folder. The same
-builds are on [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173); unpack that zip
-into the game folder. On first
-start it writes a commented `SDAtmos.ini` next to itself (bilingual, Chinese/English) and logs to
-`SDAtmos.log`.
+   ![The "Spatial sound" options in Windows 11 Sound settings: Off, Dolby Atmos for Home Theater, Windows Sonic for Headphones, Dolby Atmos for Headphones, DTS Headphone:X, DTS:X for home theater](assets/screenshots/windows-spatial-sound.png)
 
-In game:
+   Your list may be shorter: it only shows formats the device supports and whose app is installed.
+4. Make sure the device is the default output device (the one selected at the top of the Sound page).
 
-- **F9**: dynamic objects on/off. This is an A/B switch against the plain 7.1 bed.
-- **F7**: height channels on/off (A/B).
-- **F8**: HUD (needs ReShade). It shows a radar of every positioned sound and markers at their on-screen
-  directions. Cyan = object, yellow = qualifies but waiting, gray = stays in the bed, green = the player's
-  own sounds (kept in the bed, `PlayerInBed`), orange = its bus runs insert effects (kept in the bed, `BusFx`).
-- ReShade menu → **SDAtmos** tab: stream status, live settings, voice list, save to ini.
+**Step 2: download**
 
-### Documentation
+Download **[SDAtmos.zip](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases/latest/download/SDAtmos.zip)**.
+The Files tab on [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173?tab=files) has
+the same thing.
 
-`docs\` holds the long-form material for whoever picks this up: architecture and data flow, Wwise 2012.2
-internals and offsets, the game's audio entities/actor components/listener, Windows spatial audio output,
-the object routing policy, the reverse-engineering workflow, testing and log reading. Start at
-[docs/README.md](docs/README.md).
+The zip holds only this:
 
-### Building
+```text
+dinput8.dll                  ← Ultimate ASI Loader: the "loader" that makes the game load mods
+plugins\
+    SDAtmos.asi              ← the mod itself
+    SDAtmos-THIRD-PARTY-NOTICES.md
+```
 
-Visual Studio 2022 (v143), Windows SDK 10.0.26100. The project expects to sit at `mods\SDAtmos` in a
-workspace that also has:
+**Step 3: open the game folder**
 
-- `reference\reshade`: ReShade v6.8.0 source, with the `deps\imgui` submodule initialized.
-- `reference\minhook`: [MinHook](https://github.com/TsudaKageyu/minhook) v1.3.4 source (compiled with the
-  project).
+1. Open Steam and go to your Library.
+2. Right-click "Sleeping Dogs: Definitive Edition" in the list on the left → Manage → Browse local files.
+3. The folder that opens is the game folder. It contains `sdhdship.exe` (shown as just `sdhdship` if
+   Windows hides file extensions).
 
-GitHub Actions builds pushes and pull requests in that same layout and runs the automated tests;
-`.github/workflows/build.yml` lists the exact dependency versions. Builds of `main` that pass are published
-as prereleases `build-<N>` with `SDAtmos.asi` and its `.pdb`, and uploaded to Nexus Mods as a new version.
+**Step 4: copy the files in**
 
-### Credits
+1. Double-click the downloaded `SDAtmos.zip` to open it.
+2. Select `dinput8.dll` and the `plugins` folder inside and drag both into the game folder.
+3. If Windows shows "Replace or Skip Files", the game folder already has a `dinput8.dll` (you already have a
+   loader from another mod): choose "Skip this file". An existing `plugins` folder is merged automatically.
 
-- [SDmodding](https://github.com/SDmodding): the legacy build's PDB and SDK.
-- [MinHook](https://github.com/TsudaKageyu/minhook).
-- [ReShade](https://github.com/crosire/reshade) add-on API and Dear ImGui.
+Afterwards the game folder should look like this (only the relevant parts):
 
-The third-party code compiled into `SDAtmos.asi` and its licenses are listed in
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+```text
+SleepingDogsDefinitiveEdition\
+    sdhdship.exe
+    dinput8.dll
+    plugins\
+        SDAtmos.asi
+```
+
+`dinput8.dll` has to sit next to `sdhdship.exe`, without an extra folder level.
+
+**Step 5: start the game and check**
+
+Start the game from Steam as usual.
+
+- With a soundbar/receiver, its display or lights should show **Dolby Atmos** (or DTS:X) once you're in the
+  game;
+- with headphones, open `plugins\SDAtmos.log` in the game folder: a line `spatial: stream started on ...`
+  means the game is playing through spatial sound.
+
+The `plugins` folder also gets `SDAtmos.ini` and `SDAtmos.log`, which shows the mod was loaded.
+
+### Keys in game
+
+- **F9**: sound objects on/off. Press it to hear the original sound, press again to switch back.
+- **F7**: overhead channels on/off (the rain and ambience lifted overhead), also for comparing.
+- **F8**: the sound radar and on-screen markers from the screenshots above (needs ReShade, see below).
+
+### FAQ
+
+**The soundbar still shows Dolby Audio or PCM, not Dolby Atmos; or the log has no "stream started"**
+
+- Go back to step 1: Spatial sound must not be Off (a soundbar/receiver needs "Dolby Atmos for Home Theater" to
+  show Atmos), and the device must be the **default** output device;
+- if `plugins\SDAtmos.log` contains "has no spatial audio", Windows has no spatial sound on for that device;
+- if there is no `SDAtmos.log` in `plugins` at all, the mod wasn't loaded: check that `dinput8.dll` is next to
+  `sdhdship.exe` and that your antivirus didn't remove it (ASI loaders are sometimes flagged by mistake;
+  restore it from quarantine and exclude the game folder). If you skipped an existing `dinput8.dll` in step 4,
+  that file may not be an ASI loader; move it somewhere safe and use the one from the zip.
+
+**The log says "MISSING"**
+
+The mod doesn't recognize your game version, so that part stays off and the game's sound is unaffected. Please
+send the log to the author (see below).
+
+**Using the F8 radar or changing settings in game**
+
+You need ReShade with full add-on support (the installer with "Addon" in its name), and currently only
+**ReShade 6.8.0** works. Press Home to open ReShade; its **SDAtmos** tab has live settings and can save them.
+Without ReShade the audio part works all the same.
+
+**Changing settings**
+
+Open `plugins\SDAtmos.ini` in Notepad, save your changes and restart the game. Every setting is explained in
+the file.
+
+**Updating**
+
+Download the new `SDAtmos.zip` and drag only its `plugins` folder into the game folder; when Windows asks,
+choose "Replace the files in the destination". `SDAtmos.ini` isn't in the zip, so your settings stay.
+
+**Uninstalling**
+
+Delete `SDAtmos.asi`, `SDAtmos.ini` and `SDAtmos.log` from `plugins`. If no other `.asi` files are left in
+`plugins`, you can delete `dinput8.dll` too.
+
+**Reporting a problem**
+
+Describe it in [GitHub Issues](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/issues)
+or on the Bugs tab of the Nexus Mods page (which soundbar/receiver/headphones, which spatial sound format), and attach
+`plugins\SDAtmos.log`.
 
 Not affiliated with Square Enix, United Front Games, Audiokinetic, Dolby, DTS or Microsoft.

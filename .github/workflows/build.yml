@@ -127,11 +127,51 @@ jobs:
             mods/SDAtmos/build/Release/SDAtmos.pdb
           if-no-files-found: error
 
+  # SDAtmos.zip, the download for players: unpacked into the game folder it gives dinput8.dll (Ultimate ASI
+  # Loader, pinned in .github/asi-loader.env) and plugins\SDAtmos.asi. The Nexus uploads are this same zip.
+  # Also runs for PRs, so a loader update is downloaded and checked before it is merged.
+  package:
+    name: Package
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out SDAtmos
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download SDAtmos.asi
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: SDAtmos
+          path: dist
+
+      - name: Package SDAtmos.zip
+        run: |
+          . .github/asi-loader.env
+          curl -sSfL --retry 3 -o loader.zip "$ASI_LOADER_URL"
+          echo "$ASI_LOADER_SHA256  loader.zip" | sha256sum -c -
+          mkdir -p package/plugins
+          unzip -j loader.zip '*dinput8.dll' -d package
+          cp dist/SDAtmos.asi package/plugins/
+          cp THIRD-PARTY-NOTICES.md package/plugins/SDAtmos-THIRD-PARTY-NOTICES.md
+          (cd package && zip -r -X ../SDAtmos.zip dinput8.dll plugins)
+          unzip -l SDAtmos.zip
+
+      - name: Upload SDAtmos.zip
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SDAtmos-zip
+          path: SDAtmos.zip
+          if-no-files-found: error
+
   # Tag build-<N>, N = the commit's position on main (stable across re-runs). The assets keep their plain
-  # names so SDAtmos.asi can go into plugins\ as downloaded.
+  # names so SDAtmos.asi can go into plugins\ as downloaded, and the README can link
+  # releases/latest/download/SDAtmos.zip (the newest full release).
   prerelease:
     name: Prerelease
-    needs: build
+    needs: package
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -145,10 +185,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Download SDAtmos.asi
+      - name: Download SDAtmos.asi and SDAtmos.zip
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: SDAtmos
+          pattern: SDAtmos*
+          merge-multiple: true
           path: dist
 
       - name: Publish prerelease
@@ -166,14 +207,16 @@ jobs:
               echo "::error::$tag already exists for another commit"
               exit 1
             fi
-            gh release upload "$tag" dist/SDAtmos.asi dist/SDAtmos.pdb THIRD-PARTY-NOTICES.md --clobber
+            gh release upload "$tag" dist/SDAtmos.zip dist/SDAtmos.asi dist/SDAtmos.pdb THIRD-PARTY-NOTICES.md --clobber
             exit 0
           fi
           prev=$(git describe --tags --abbrev=0 --match 'build-*' HEAD 2> /dev/null || true)
           {
             echo "Automatic build of $short on \`main\` ([CI run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)). Untested in game."
             echo
-            echo "Copy \`SDAtmos.asi\` into the game's \`plugins\` folder. \`SDAtmos.pdb\` is only needed to read crash dumps."
+            echo "- \`SDAtmos.zip\`: unpack into the game folder. Contains the mod and Ultimate ASI Loader (\`dinput8.dll\`); see the [README](https://github.com/$GITHUB_REPOSITORY#readme)."
+            echo "- \`SDAtmos.asi\`: the mod alone, for the \`plugins\` folder of a game that already has an ASI loader."
+            echo "- \`SDAtmos.pdb\`: only needed to read crash dumps."
             echo
             if [ -n "$prev" ]; then
               echo "Changes since $prev:"
@@ -183,7 +226,7 @@ jobs:
               git log -n 10 --format='- %s (%h)'
             fi
           } > notes.md
-          gh release create "$tag" dist/SDAtmos.asi dist/SDAtmos.pdb THIRD-PARTY-NOTICES.md --prerelease --target "$GITHUB_SHA" \
+          gh release create "$tag" dist/SDAtmos.zip dist/SDAtmos.asi dist/SDAtmos.pdb THIRD-PARTY-NOTICES.md --prerelease --target "$GITHUB_SHA" \
             --title "SDAtmos build $n ($short)" --notes-file notes.md
 
   # Each new prerelease also becomes the latest version of the mod's "GitHub CI Build" file on Nexus Mods,
@@ -212,18 +255,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Download SDAtmos.asi
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: SDAtmos
-          path: dist
-
       # Nexus keeps every upload as a new version, so a re-run of a build it already has uploads nothing.
-      # The zip unpacks into the game folder. The .pdb stays on the GitHub prerelease of the same build.
+      # The file is the prerelease's SDAtmos.zip; the .pdb stays on GitHub.
       - name: Package
         id: package
         env:
           NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           if [ -z "$NEXUSMODS_API_KEY" ]; then
             echo "::error::vars.NEXUS_CI_FILE_ID is set but secrets.NEXUSMODS_API_KEY is not"
@@ -240,10 +279,7 @@ jobs:
           fi
           latest=$(jq -r '.data.versions | max_by(.uploaded_at) | .version // empty' versions.json)
 
-          mkdir -p package/plugins
-          cp dist/SDAtmos.asi package/plugins/
-          cp THIRD-PARTY-NOTICES.md package/plugins/SDAtmos-THIRD-PARTY-NOTICES.md
-          (cd package && zip -r -X "../SDAtmos-$version.zip" plugins)
+          gh release download "$version" -p SDAtmos.zip -O "SDAtmos-$version.zip"
 
           # Changes since the version Nexus has, or since the previous build if that is not a build tag.
           if git rev-parse -q --verify "refs/tags/$latest" > /dev/null; then
@@ -254,7 +290,7 @@ jobs:
           {
             echo "version=$version"
             echo "name=SDAtmos GitHub CI Build $n"
-            echo "description=Automatic build of $short on main, untested in game. Unpack into the game folder (puts SDAtmos.asi into plugins). Source and .pdb: https://github.com/$GITHUB_REPOSITORY/releases/tag/$version"
+            echo "description=Automatic build of $short on main, untested in game. Unpack into the game folder: dinput8.dll (Ultimate ASI Loader) and plugins\\SDAtmos.asi. Source and .pdb: https://github.com/$GITHUB_REPOSITORY/releases/tag/$version"
             delimiter="EOF_$(openssl rand -hex 8)"
             echo "changelog<<$delimiter"
             if [ -n "$since" ]; then git log --format='%s' "$since..HEAD"; else git log -n 10 --format='%s'; fi
