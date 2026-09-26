@@ -137,8 +137,7 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   first release). Both Nexus jobs are copies of SDIMEFix's, which documents how they work (`mods\SDIMEFix\CLAUDE.md`);
   keep them in step. Settings: repo variables `NEXUS_MOD_ID`, `NEXUS_CI_FILE_ID`, `NEXUS_RELEASE_FILE_ID`
   (v3 IDs from a file's "Advanced" dialog, not the `173` in the URL) and secret `NEXUSMODS_API_KEY`. Current
-  values: mod `14933601288365`, CI file `8026248`; the release file was created by the build-24 release,
-  but `NEXUS_RELEASE_FILE_ID` isn't set yet (copy its "File ID" from the site).
+  values: mod `14933601288365`, CI file `8026248`, release file `8026392` (created by the build-24 release).
 - `assets/` — `banner.png` (README header and the GitHub social preview, 1280×640, keep under 1 MB) and
   `icon.png` (512×512, transparent corners), both rendered from `assets/branding/logo.html` the same way as
   SDIMEFix's (`?export=banner` / `?export=icon` in headless Edge, `--screenshot --window-size=W,H
