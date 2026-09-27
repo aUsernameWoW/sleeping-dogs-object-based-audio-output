@@ -94,10 +94,11 @@ jobs:
             git merge-base --is-ancestor "$t" "$TAG" 2> /dev/null || continue
             if [ -z "$prev" ] || git merge-base --is-ancestor "$prev" "$t"; then prev=$t; fi
           done
+          # Paths in the description use /: the Files tab shows file descriptions with their backslashes removed.
           {
             echo "file_id=$file_id"
             echo "zip=$zip"
-            echo "description=Release $TAG. Unpack into the game folder: dinput8.dll (Ultimate ASI Loader) and plugins\\SDAtmos.asi. Source and .pdb: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            echo "description=Release $TAG. Unpack into the game folder: dinput8.dll (Ultimate ASI Loader) and plugins/SDAtmos.asi. Source and .pdb: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
             delimiter="EOF_$(openssl rand -hex 8)"
             echo "changelog<<$delimiter"
             [ -n "$prev" ] && git log --format='%s' "$prev..$TAG"
