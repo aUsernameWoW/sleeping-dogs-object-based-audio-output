@@ -147,6 +147,10 @@ SleepingDogsDefinitiveEdition\
 在 [GitHub Issues](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/issues) 或 Nexus
 Mods 页面的 Bugs 标签里说明情况（用的什么回音壁/功放/耳机、哪种空间音效），并附上 `plugins\SDAtmos.log`。
 
+### 致谢
+
+感谢 [SDmodding](https://github.com/SDmodding) 社区公开的《热血无赖》研究资料和工具，开发这个 mod 时用到了它们。
+
 与 Square Enix、United Front Games、Audiokinetic、Dolby、DTS、Microsoft 均无关联。
 
 ## English
@@ -288,5 +292,10 @@ Delete `SDAtmos.asi`, `SDAtmos.ini` and `SDAtmos.log` from `plugins`. If no othe
 Describe it in [GitHub Issues](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/issues)
 or on the Bugs tab of the Nexus Mods page (which soundbar/receiver/headphones, which spatial sound format), and attach
 `plugins\SDAtmos.log`.
+
+### Credits
+
+Thanks to the [SDmodding](https://github.com/SDmodding) community for the Sleeping Dogs research and tools they
+share, which went into making this mod.
 
 Not affiliated with Square Enix, United Front Games, Audiokinetic, Dolby, DTS or Microsoft.
