@@ -102,12 +102,48 @@ Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 N
 
 ### 致谢
 
-- [SDmodding](https://github.com/SDmodding)：旧版 PDB 和 SDK。
-- [MinHook](https://github.com/TsudaKageyu/minhook)。
-- [ReShade](https://github.com/crosire/reshade) 的插件 API 和 Dear ImGui。
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)。
+这个 mod 用到或参考了下面这些人和项目的成果，在此致谢。
 
-第三方代码及其许可证见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+**研究资料**
+
+- [SDmodding](https://github.com/SDmodding)，几乎全部出自 [sneakyevil](https://github.com/sneakyevil) 一人之手。这个 mod 用到了：
+  - SDmodding 分享的游戏 v1.0 版 exe 和调试符号（PDB，Steam 首发版自带）：游戏内置的 Wwise 音频引擎和游戏音频系统的内部结构都是从这里查到的；
+  - [SDK](https://github.com/SDmodding/SDK)：游戏里的类名和数据结构（角色的音频组件、本地玩家等）；
+  - [BigFileSystem](https://github.com/SDmodding/BigFileSystem)、[TheoryEngine](https://github.com/SDmodding/TheoryEngine)，以及 sneakyevil 的 [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) 和 [Ekey](https://github.com/Ekey) 的 SDDEUnpacker 里的文件名列表：
+    我们照着它们写了读取游戏资源包（`.big`）的工具，横幅图参照的游戏界面贴图就是用它取出的。
+- Audiokinetic 的 [Wwise](https://www.audiokinetic.com)：游戏用的是 Wwise 2012.2，mod 在它内部取出每个声音，并在声音对象上
+  重现游戏 Wwise 的参数均衡器。
+- 音频研究和指南（头顶声道与声音对象的设计依据）：
+  - Dolby 的游戏开发指南（Dolby Atmos「Artistic considerations」）、Dolby Atmos Renderer 指南、Dolby Pro Logic IIz
+    资料，以及 Dolby 与 UMG 的音乐混音建议；
+  - Hyunkook Lee（University of Huddersfield）关于垂直方向声像定位的心理声学研究；
+  - DTS 的专利 [US20170325043A1](https://patents.google.com/patent/US20170325043A1/en)（Immersive audio reproduction
+    systems）：头顶声道的延迟、全通去相关和低频衰减，mod 照它的做法实现；
+  - Dolby Surround Upmixer、DTS Neural:X、Auro-Matic 等上混器的思路；
+  - Production Expert 和 Pro Sound Effects 的 Atmos 混音指南；
+  - Microsoft 的[空间音效文档](https://learn.microsoft.com/windows/win32/coreaudio/spatial-sound)（ISpatialAudioClient）；
+  - Schroeder 全通滤波器、Robert Bristow-Johnson 的 Audio EQ Cookbook（高通滤波器）和 Haas 效应。
+
+**mod 里包含的代码**（许可证全文见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)）
+
+- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)（ThirteenAG）：压缩包里的 `dinput8.dll`，让游戏加载 mod。它本身还包含 MinHook、
+  [miniz](https://github.com/richgel999/miniz)（Rich Geldreich 等）和 [praydog](https://github.com/praydog) 的 FunctionHookMinHook。
+- [MinHook](https://github.com/TsudaKageyu/minhook)（Tsuda Kageyu，内含 Vyacheslav Patkov 的 Hacker Disassembler Engine）：mod 靠它接入游戏。
+- [ReShade](https://github.com/crosire/reshade)（crosire）的插件接口和 [Dear ImGui](https://github.com/ocornut/imgui)（Omar Cornut）：F8 雷达和游戏内的设置界面。
+
+**工具**
+
+- [IDA Pro](https://hex-rays.com/ida-pro)（Hex-Rays）和 [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp)（mrexodia）：分析游戏程序。
+- [Claude Code](https://claude.com/claude-code)（Anthropic）：这个 mod 是在 AI 辅助下开发的，代码、文档和逆向分析由作者和 Claude 一起完成。
+- 字体 [Noto Sans SC/TC](https://fonts.google.com/noto)、[Teko](https://fonts.google.com/specimen/Teko)、[Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed)：横幅图和图标。
+
+**游戏与商标**
+
+《热血无赖：终极版》（Sleeping Dogs: Definitive Edition）由 United Front Games 开发、Square Enix 发行，
+游戏及其内容的版权归 Square Enix 所有。截图来自游戏画面。横幅图和图标仿照游戏的菜单界面重新绘制，没有使用游戏原图。
+Dolby、Dolby Atmos 和 Pro Logic 是 Dolby Laboratories 的商标；DTS、DTS:X 和 Neural:X 是 DTS, Inc. 的商标；
+Auro-Matic 是 Auro Technologies 的商标；Wwise 是 Audiokinetic 的商标；Windows 和 Windows Sonic 是 Microsoft 的商标。
+这些名字只用来说明 mod 支持的输出格式和参考的资料。
 
 与 Square Enix、United Front Games、Audiokinetic、Dolby、DTS、Microsoft 均无关联。
 
@@ -228,11 +264,52 @@ promoting a prerelease to a full release on GitHub uploads it to the Nexus main 
 
 ### Credits
 
-- [SDmodding](https://github.com/SDmodding): the legacy build's PDB and SDK.
-- [MinHook](https://github.com/TsudaKageyu/minhook).
-- [ReShade](https://github.com/crosire/reshade) add-on API and Dear ImGui.
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader).
+This mod uses or builds on the work of these people and projects. Thank you.
 
-The third-party code and its licenses are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+**Research**
+
+- [SDmodding](https://github.com/SDmodding), almost all of it the work of one person, [sneakyevil](https://github.com/sneakyevil). This mod used:
+  - the game's v1.0 exe and its debug symbols (PDB, shipped with the original Steam release), shared by
+    SDmodding: the internals of the game's built-in Wwise audio engine and of its audio system come from them;
+  - the [SDK](https://github.com/SDmodding/SDK): the game's class names and data structures (the characters' audio component, the local player);
+  - [BigFileSystem](https://github.com/SDmodding/BigFileSystem), [TheoryEngine](https://github.com/SDmodding/TheoryEngine), and the file name lists in sneakyevil's [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) and in [Ekey](https://github.com/Ekey)'s
+    SDDEUnpacker: our tool for reading the game's `.big` archives follows them; the game's UI textures the banner is modelled on were taken out with it.
+- Audiokinetic's [Wwise](https://www.audiokinetic.com): the game uses Wwise 2012.2; the mod takes each sound out of it
+  and recreates the game's Wwise parametric EQ on sound objects.
+- Audio research and guides (the basis of the height channels and of which sounds become objects):
+  - Dolby's game developer guidance (Dolby Atmos "Artistic considerations"), the Dolby Atmos Renderer guide, the
+    Dolby Pro Logic IIz literature, and Dolby/UMG's music mixing best practices;
+  - Hyunkook Lee's (University of Huddersfield) psychoacoustic research on vertical localization;
+  - DTS's patent application [US20170325043A1](https://patents.google.com/patent/US20170325043A1/en) (Immersive audio
+    reproduction systems): the mod follows its recipe of a delay, all-pass decorrelation and a low-frequency
+    shelf on the height channels;
+  - upmixers such as Dolby Surround Upmixer, DTS Neural:X and Auro-Matic;
+  - the Atmos mixing guides of Production Expert and Pro Sound Effects;
+  - Microsoft's [spatial sound documentation](https://learn.microsoft.com/windows/win32/coreaudio/spatial-sound)
+    (ISpatialAudioClient);
+  - the Schroeder all-pass filter, Robert Bristow-Johnson's Audio EQ Cookbook (the high-pass) and the Haas effect.
+
+**Code in the mod** (full license texts in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md))
+
+- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) (ThirteenAG): the `dinput8.dll` in the zip, which makes the game load mods.
+  It contains MinHook, [miniz](https://github.com/richgel999/miniz) (Rich Geldreich and others) and [praydog](https://github.com/praydog)'s FunctionHookMinHook.
+- [MinHook](https://github.com/TsudaKageyu/minhook) (Tsuda Kageyu, with Vyacheslav Patkov's Hacker Disassembler Engine): how the mod hooks into the game.
+- [ReShade](https://github.com/crosire/reshade) (crosire) add-on API and [Dear ImGui](https://github.com/ocornut/imgui) (Omar Cornut): the F8 radar and the in-game settings.
+
+**Tools**
+
+- [IDA Pro](https://hex-rays.com/ida-pro) (Hex-Rays) and [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) (mrexodia): analyzing the game's code.
+- [Claude Code](https://claude.com/claude-code) (Anthropic): this mod was developed with AI assistance; its code, documentation and reverse
+  engineering were done by the author together with Claude.
+- The fonts [Noto Sans SC/TC](https://fonts.google.com/noto), [Teko](https://fonts.google.com/specimen/Teko) and [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed): the banner and the icon.
+
+**The game and trademarks**
+
+Sleeping Dogs: Definitive Edition was developed by United Front Games and published by Square Enix; the game
+and its content are © Square Enix. The screenshots show the game. The banner and the icon redraw the look of the game's menus; no game art is used in them.
+Dolby, Dolby Atmos and Pro Logic are trademarks of Dolby Laboratories; DTS, DTS:X and Neural:X are trademarks of
+DTS, Inc.; Auro-Matic is a trademark of Auro Technologies; Wwise is a trademark of Audiokinetic; Windows and Windows
+Sonic are trademarks of Microsoft. These names only say which output formats the mod supports and which material
+it draws on.
 
 Not affiliated with Square Enix, United Front Games, Audiokinetic, Dolby, DTS or Microsoft.
