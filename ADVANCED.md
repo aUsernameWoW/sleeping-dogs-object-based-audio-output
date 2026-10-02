@@ -110,7 +110,7 @@ Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 N
   - SDmodding 分享的游戏 v1.0 版 exe 和调试符号（PDB，Steam 首发版自带）：游戏内置的 Wwise 音频引擎和游戏音频系统的内部结构都是从这里查到的；
   - [SDK](https://github.com/SDmodding/SDK)：游戏里的类名和数据结构（角色的音频组件、本地玩家等）；
   - [BigFileSystem](https://github.com/SDmodding/BigFileSystem)、[TheoryEngine](https://github.com/SDmodding/TheoryEngine)，以及 sneakyevil 的 [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) 和 [Ekey](https://github.com/Ekey) 的 SDDEUnpacker 里的文件名列表：
-    我们照着它们写了读取游戏资源包（`.big`）的工具，横幅图参照的游戏界面贴图就是用它取出的。
+    读取游戏资源包（`.big`）的工具是照着它们写的，横幅图参照的游戏界面贴图就是用它取出的。
 - Audiokinetic 的 [Wwise](https://www.audiokinetic.com)：游戏用的是 Wwise 2012.2，mod 在它内部取出每个声音，并在声音对象上
   重现游戏 Wwise 的参数均衡器。
 - 音频研究和指南（头顶声道与声音对象的设计依据）：
@@ -134,7 +134,7 @@ Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 N
 **工具**
 
 - [IDA Pro](https://hex-rays.com/ida-pro)（Hex-Rays）和 [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp)（mrexodia）：分析游戏程序。
-- [Claude Code](https://claude.com/claude-code)（Anthropic）：这个 mod 的代码、文档和逆向分析几乎全部由 Claude 完成；作者负责提出需求、把握方向和在游戏里测试，代码审查得很少。
+- [Claude Code](https://claude.com/claude-code)（Anthropic）：这个 mod 完全是用 Claude Fable 和 Opus vibe coding 写出来的，代码、文档和逆向分析都出自 Claude，几乎没有经过人工审查。
 - 字体 [Noto Sans SC/TC](https://fonts.google.com/noto)、[Teko](https://fonts.google.com/specimen/Teko)、[Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed)：横幅图和图标。
 
 **游戏与商标**
@@ -273,7 +273,7 @@ This mod uses or builds on the work of these people and projects. Thank you.
     SDmodding: the internals of the game's built-in Wwise audio engine and of its audio system come from them;
   - the [SDK](https://github.com/SDmodding/SDK): the game's class names and data structures (the characters' audio component, the local player);
   - [BigFileSystem](https://github.com/SDmodding/BigFileSystem), [TheoryEngine](https://github.com/SDmodding/TheoryEngine), and the file name lists in sneakyevil's [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) and in [Ekey](https://github.com/Ekey)'s
-    SDDEUnpacker: our tool for reading the game's `.big` archives follows them; the game's UI textures the banner is modelled on were taken out with it.
+    SDDEUnpacker: the tool that reads the game's `.big` archives follows them; the game's UI textures the banner is modelled on were taken out with it.
 - Audiokinetic's [Wwise](https://www.audiokinetic.com): the game uses Wwise 2012.2; the mod takes each sound out of it
   and recreates the game's Wwise parametric EQ on sound objects.
 - Audio research and guides (the basis of the height channels and of which sounds become objects):
@@ -299,9 +299,8 @@ This mod uses or builds on the work of these people and projects. Thank you.
 **Tools**
 
 - [IDA Pro](https://hex-rays.com/ida-pro) (Hex-Rays) and [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) (mrexodia): analyzing the game's code.
-- [Claude Code](https://claude.com/claude-code) (Anthropic): almost all of this mod's code, documentation and reverse
-  engineering was done by Claude; the author set the goals, steered and tested in game, and reviewed little of the
-  code.
+- [Claude Code](https://claude.com/claude-code) (Anthropic): this mod was fully vibe-coded with Claude Fable and Opus; its code,
+  documentation and reverse engineering are all Claude's, with little human review.
 - The fonts [Noto Sans SC/TC](https://fonts.google.com/noto), [Teko](https://fonts.google.com/specimen/Teko) and [Barlow Condensed](https://fonts.google.com/specimen/Barlow+Condensed): the banner and the icon.
 
 **The game and trademarks**
