@@ -35,8 +35,7 @@ Same plane and a different height: object 2 is at about the listener's height, o
 
 状态：**实验性**。在作者的环境里（HDMI 连接的全景声回音壁）工作正常。
 
-> 适用于**任何版本**的《热血无赖：终极版》，Windows 10/11 64 位。想了解原理、自己编译，或已经装过其他 mod，
-> 请看 [ADVANCED.md](ADVANCED.md)。
+> 适用于**任何版本**的《热血无赖：终极版》，Windows 10/11 64 位。想了解原理、自己编译，或已经装过其他 mod，请看 [ADVANCED.md](ADVANCED.md)。
 
 ### 你需要什么
 
@@ -44,32 +43,26 @@ Same plane and a different height: object 2 is at about the listener's height, o
 
 根据你用的设备选一种：
 
-- **全景声回音壁或功放**（用 HDMI 接到电脑上）：选 “Dolby Atmos for Home Theater”（需要 Microsoft Store 里的
-  免费应用 Dolby Access），或者 DTS:X 设备选 “DTS:X for home theater”；
-- **耳机**：选 “Windows Sonic for Headphones”（Windows 自带，免费），或者 “Dolby Atmos for Headphones”、
-  “DTS Headphone:X”（需要各自的应用）。
+- **全景声回音壁或功放**（用 HDMI 接到电脑上）：选 “Dolby Atmos for Home Theater”（需要 Microsoft Store 里的免费应用 Dolby Access），或者 DTS:X 设备选 “DTS:X for home theater”；
+- **耳机**：选 “Windows Sonic for Headphones”（Windows 自带，免费），或者 “Dolby Atmos for Headphones”、“DTS Headphone:X”（需要各自的应用）。
 
 ### 安装（大约五分钟）
 
 **第 1 步：打开 Windows 的空间音效（一定要做）**
 
-1. 用 Dolby 或 DTS 的格式的话，先在 Microsoft Store 里安装对应的应用（Dolby Access 或 DTS Sound Unbound），
-   打开它并按提示设置好你的设备。用 Windows Sonic 的话跳过这一步。
-2. 按 **Win + Ctrl + V**，打开「声音输出」面板。确认选中的是你正在用的设备（回音壁/功放通常显示为它的名字，
-   或 “HDMI”“Display Audio”；耳机就选耳机）。
+1. 用 Dolby 或 DTS 的格式的话，先在 Microsoft Store 里安装对应的应用（Dolby Access 或 DTS Sound Unbound），打开它并按提示设置好你的设备。用 Windows Sonic 的话跳过这一步。
+2. 按 **Win + Ctrl + V**，打开「声音输出」面板。确认选中的是你正在用的设备（回音壁/功放通常显示为它的名字，或 “HDMI”“Display Audio”；耳机就选耳机）。
 3. 在「空间音效」（Spatial sound）里，把「关」（Off）改成下图中**除了「关」以外的任意一项**：
 
    ![Windows 11 的「声音输出」面板，标题旁是快捷键 Win + Ctrl + V；「空间音效」选项：关、Dolby Atmos for Home Theater、Windows Sonic for Headphones、Dolby Atmos for Headphones、DTS Headphone:X、DTS:X for home theater](assets/screenshots/windows-spatial-sound.png)
 
    你的列表可能比图里短，只会列出这台设备支持、并且已经装了对应应用的格式。
 
-   Windows 10，或者快捷键不起作用时：打开「设置」→「系统」→「声音」，点你的设备，在「空间音效」里改，并确认
-   它是默认输出设备。
+   Windows 10，或者快捷键不起作用时：打开「设置」→「系统」→「声音」，点你的设备，在「空间音效」里改，并确认它是默认输出设备。
 
 **第 2 步：下载**
 
-点这里下载 **[SDAtmos.zip](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases/latest/download/SDAtmos.zip)**。
-也可以在 [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173?tab=files) 的 Files
+点这里下载 **[SDAtmos.zip](https://github.com/aUsernameWoW/sleeping-dogs-object-based-audio-output/releases/latest/download/SDAtmos.zip)**。也可以在 [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173?tab=files) 的 Files
 页面下载，内容相同。
 
 压缩包里只有这些：
@@ -91,8 +84,7 @@ plugins\
 
 1. 双击打开下载的 `SDAtmos.zip`。
 2. 选中里面的 `dinput8.dll` 和 `plugins` 文件夹，一起拖进游戏文件夹。
-3. 如果 Windows 弹出「替换或跳过文件」，说明游戏文件夹里已经有 `dinput8.dll` 了（你以前装过别的 mod，
-   加载器已经在了），选「跳过该文件」。已有的 `plugins` 文件夹会自动合并，不用管。
+3. 如果 Windows 弹出「替换或跳过文件」，说明游戏文件夹里已经有 `dinput8.dll` 了（你以前装过别的 mod，加载器已经在了），选「跳过该文件」。已有的 `plugins` 文件夹会自动合并，不用管。
 
 放好后，游戏文件夹里应该是这样（只列出相关的部分）：
 
@@ -111,8 +103,7 @@ SleepingDogsDefinitiveEdition\
 照常从 Steam 启动游戏。
 
 - 用回音壁/功放的话，进入游戏后它的显示屏或指示灯应该显示 **Dolby Atmos**（或 DTS:X）；
-- 用耳机的话，打开游戏文件夹里的 `plugins\SDAtmos.log`，里面有一行 `spatial: stream started on ...`，就说明
-  已经在用空间音效输出了。
+- 用耳机的话，打开游戏文件夹里的 `plugins\SDAtmos.log`，里面有一行 `spatial: stream started on ...`，就说明已经在用空间音效输出了。
 
 另外，`plugins` 里多出 `SDAtmos.ini` 和 `SDAtmos.log` 两个文件，说明 mod 已经加载。
 
@@ -126,12 +117,10 @@ SleepingDogsDefinitiveEdition\
 
 **回音壁还是显示 Dolby Audio 或 PCM，不显示 Dolby Atmos；或者日志里没有 “stream started”**
 
-- 回到第 1 步，确认「空间音效」不是「关」（回音壁/功放要选 “Dolby Atmos for Home Theater” 才会显示 Atmos），
-  而且这个设备是**默认**输出设备；
+- 回到第 1 步，确认「空间音效」不是「关」（回音壁/功放要选 “Dolby Atmos for Home Theater” 才会显示 Atmos），而且这个设备是**默认**输出设备；
 - 打开 `plugins\SDAtmos.log`，如果里面有 “has no spatial audio”，说明 Windows 对这个设备没有开空间音效；
 - 如果 `plugins` 里根本没有 `SDAtmos.log`，说明 mod 没被加载：检查 `dinput8.dll` 是否和 `sdhdship.exe`
-  在同一层，杀毒软件有没有删掉它（ASI 加载器偶尔会被误报，可以从隔离区还原并把游戏文件夹加入排除项）；
-  如果第 4 步跳过了原有的 `dinput8.dll`，那个文件可能不是 ASI 加载器，备份后换成压缩包里的。
+  在同一层，杀毒软件有没有删掉它（ASI 加载器偶尔会被误报，可以从隔离区还原并把游戏文件夹加入排除项）；如果第 4 步跳过了原有的 `dinput8.dll`，那个文件可能不是 ASI 加载器，备份后换成压缩包里的。
 
 **想用 F8 雷达，或者在游戏里调设置**
 
@@ -144,8 +133,7 @@ SleepingDogsDefinitiveEdition\
 
 **更新**
 
-下载新的 `SDAtmos.zip`，只把里面的 `plugins` 文件夹拖进游戏文件夹，Windows 询问时选「替换目标中的文件」。
-`SDAtmos.ini` 不在压缩包里，你的设置会保留。
+下载新的 `SDAtmos.zip`，只把里面的 `plugins` 文件夹拖进游戏文件夹，Windows 询问时选「替换目标中的文件」。`SDAtmos.ini` 不在压缩包里，你的设置会保留。
 
 **卸载**
 
@@ -167,10 +155,8 @@ Mods 页面的 Bugs 标签里说明情况（用的什么回音壁/功放/耳机�
   - SDmodding 随 [SDK](https://github.com/SDmodding/SDK) 发布的 [Visual Studio 2022 项目模板](https://github.com/SDmodding/SDK/releases/tag/vs2022)：这个 mod 的 Visual Studio 工程源自这个模板，编译设置和以 `dllmain.cc` 为起点的源文件结构都来自它；
   - SDmodding 分享的游戏 v1.0 版 exe 和调试符号（PDB，Steam 首发版自带）：游戏内置的 Wwise 音频引擎和游戏音频系统的内部结构都是从这里查到的；
   - [SDK](https://github.com/SDmodding/SDK)：游戏里的类名和数据结构（角色的音频组件、本地玩家等）；
-  - [BigFileSystem](https://github.com/SDmodding/BigFileSystem)、[TheoryEngine](https://github.com/SDmodding/TheoryEngine)，以及 sneakyevil 的 [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) 和 [Ekey](https://github.com/Ekey) 的 SDDEUnpacker 里的文件名列表：
-    读取游戏资源包（`.big`）的工具是照着它们写的，横幅图参照的游戏界面贴图就是用它取出的。
-- Audiokinetic 的 [Wwise](https://www.audiokinetic.com)：游戏用的是 Wwise 2012.2，mod 在它内部取出每个声音，并在声音对象上
-  重现游戏 Wwise 的参数均衡器。
+  - [BigFileSystem](https://github.com/SDmodding/BigFileSystem)、[TheoryEngine](https://github.com/SDmodding/TheoryEngine)，以及 sneakyevil 的 [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) 和 [Ekey](https://github.com/Ekey) 的 SDDEUnpacker 里的文件名列表：读取游戏资源包（`.big`）的工具是照着它们写的，横幅图参照的游戏界面贴图就是用它取出的。
+- Audiokinetic 的 [Wwise](https://www.audiokinetic.com)：游戏用的是 Wwise 2012.2，mod 在它内部取出每个声音，并在声音对象上重现游戏 Wwise 的参数均衡器。
 - 音频研究和指南（头顶声道与声音对象的设计依据）：
   - Dolby 的游戏开发指南（Dolby Atmos「Artistic considerations」）、Dolby Atmos Renderer 指南、Dolby Pro Logic IIz
     资料，以及 Dolby 与 UMG 的音乐混音建议；
@@ -184,8 +170,7 @@ Mods 页面的 Bugs 标签里说明情况（用的什么回音壁/功放/耳机�
 
 **mod 里包含的代码**（许可证全文见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)）
 
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)（ThirteenAG）：压缩包里的 `dinput8.dll`，让游戏加载 mod。它本身还包含 MinHook、
-  [miniz](https://github.com/richgel999/miniz)（Rich Geldreich 等）和 [praydog](https://github.com/praydog) 的 FunctionHookMinHook。
+- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)（ThirteenAG）：压缩包里的 `dinput8.dll`，让游戏加载 mod。它本身还包含 MinHook、[miniz](https://github.com/richgel999/miniz)（Rich Geldreich 等）和 [praydog](https://github.com/praydog) 的 FunctionHookMinHook。
 - [MinHook](https://github.com/TsudaKageyu/minhook)（Tsuda Kageyu，内含 Vyacheslav Patkov 的 Hacker Disassembler Engine）：mod 靠它接入游戏。
 - [ReShade](https://github.com/crosire/reshade)（crosire）的插件接口和 [Dear ImGui](https://github.com/ocornut/imgui)（Omar Cornut）：F8 雷达和游戏内的设置界面。
 
@@ -197,11 +182,7 @@ Mods 页面的 Bugs 标签里说明情况（用的什么回音壁/功放/耳机�
 
 **游戏与商标**
 
-《热血无赖：终极版》（Sleeping Dogs: Definitive Edition）由 United Front Games 开发、Square Enix 发行，
-游戏及其内容的版权归 Square Enix 所有。截图来自游戏画面。横幅图和图标仿照游戏的菜单界面重新绘制，没有使用游戏原图。
-Dolby、Dolby Atmos 和 Pro Logic 是 Dolby Laboratories 的商标；DTS、DTS:X 和 Neural:X 是 DTS, Inc. 的商标；
-Auro-Matic 是 Auro Technologies 的商标；Wwise 是 Audiokinetic 的商标；Windows 和 Windows Sonic 是 Microsoft 的商标。
-这些名字只用来说明 mod 支持的输出格式和参考的资料。
+《热血无赖：终极版》（Sleeping Dogs: Definitive Edition）由 United Front Games 开发、Square Enix 发行，游戏及其内容的版权归 Square Enix 所有。截图来自游戏画面。横幅图和图标仿照游戏的菜单界面重新绘制，没有使用游戏原图。Dolby、Dolby Atmos 和 Pro Logic 是 Dolby Laboratories 的商标；DTS、DTS:X 和 Neural:X 是 DTS, Inc. 的商标；Auro-Matic 是 Auro Technologies 的商标；Wwise 是 Audiokinetic 的商标；Windows 和 Windows Sonic 是 Microsoft 的商标。这些名字只用来说明 mod 支持的输出格式和参考的资料。
 
 与 Square Enix、United Front Games、Audiokinetic、Dolby、DTS、Microsoft 均无关联。
 

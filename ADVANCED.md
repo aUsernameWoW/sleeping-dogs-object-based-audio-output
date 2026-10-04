@@ -25,35 +25,23 @@ Dolby Audio（DD/DD+）输出，只有调用 `ISpatialAudioClient` 的程序才�
 Wwise 引擎，改由 `ISpatialAudioClient` 输出：
 
 - **7.1 声道床**：游戏的最终混音作为静态床对象输出。接收端切换到 Atmos，听感和原来一样。
-- **动态对象**：每个 Wwise 帧，把最响的点状 3D 声音（枪声、脚步、车辆、人声）从声道床里取出来，把它们平移前的
-  信号作为动态对象送出，方向就用 Wwise 为它算好的方向，包括高度。原本的 7.1 声像器会把高度压平。环境声、混响、
-  spread 很大的声音这类扩散声仍留在床里；声音数量超过格式允许的对象数（HDMI 上为 20 个）时，多出来的并回床里，
-  这也是 Dolby 游戏音频指南推荐的做法。
-- **7.1.4 高度声道**：游戏本身没有高度内容，mod 把扩散类声音的一部分抬到床的四个顶部声道：天气（雨、雷、风）和
-  鸟叫抬得最多，其余环境声（城市、人群、水）和混响返回少一些；地面声道相应减去同样的能量。抬上去的信号经过短延迟
+- **动态对象**：每个 Wwise 帧，把最响的点状 3D 声音（枪声、脚步、车辆、人声）从声道床里取出来，把它们平移前的信号作为动态对象送出，方向就用 Wwise 为它算好的方向，包括高度。原本的 7.1 声像器会把高度压平。环境声、混响、spread 很大的声音这类扩散声仍留在床里；声音数量超过格式允许的对象数（HDMI 上为 20 个）时，多出来的并回床里，这也是 Dolby 游戏音频指南推荐的做法。
+- **7.1.4 高度声道**：游戏本身没有高度内容，mod 把扩散类声音的一部分抬到床的四个顶部声道：天气（雨、雷、风）和鸟叫抬得最多，其余环境声（城市、人群、水）和混响返回少一些；地面声道相应减去同样的能量。抬上去的信号经过短延迟
   + 全通 + 高通的去相关处理，前后两对不同，这是 Dolby/DTS 上混器和 Atmos 混音指南的通行做法。
-- **不绑定 Dolby**：对象上限、床布局和格式都在运行时向系统查询，所以 DTS:X for Home Theater、Windows Sonic 也走
-  同一条路径（目前只在 Dolby Atmos for home theater 上测试过）。
+- **不绑定 Dolby**：对象上限、床布局和格式都在运行时向系统查询，所以 DTS:X for Home Theater、Windows Sonic 也走同一条路径（目前只在 Dolby Atmos for home theater 上测试过）。
 
 状态：**实验性**。在作者的环境里游戏内工作正常，听感测试仍在进行。
 
 ### 原理
 
 安装版 Steam exe 不带符号。Wwise 函数靠字节特征码定位；特征码取自旧版 v1.0 exe 及其 PDB（来自 SDmodding
-项目）。Wwise 是静态链接的，两个版本里完全相同。找不到某组特征码时，对应的功能不启用，日志里写 `MISSING`。
-hook 点：
+项目）。Wwise 是静态链接的，两个版本里完全相同。找不到某组特征码时，对应的功能不启用，日志里写 `MISSING`。hook 点：
 
-- `CAkSinkXAudio2::Init/PassData/PassSilence`：在 XAudio2 拿到之前取走最终混音。XAudio2 继续静音运行，
-  给 Wwise 当时钟。空间音频不可用时，游戏照旧走 XAudio2，不受影响。
-- `CAkLEngine::RunVPL` + `CAkVPLMixBusNode::ConsumeBuffer`：每个声音混入总线的位置。对于成为对象的声音，
-  mod 按 Wwise 本来会用的增益渐变（含总线音量）取出它的 PCM，再把 Wwise 自己的混音矩阵相应调低，让床里只剩
-  不属于对象的部分。在床和对象之间切换时，用一个 21 ms 的缓冲做交叉淡化。
-- 总线向上级总线传递输出的位置（高度声道），以及 `AK::SoundEngine::SetPosition`（把角色的声音位置从脚下抬到
-  头部高度，`ActorLift`）。
+- `CAkSinkXAudio2::Init/PassData/PassSilence`：在 XAudio2 拿到之前取走最终混音。XAudio2 继续静音运行，给 Wwise 当时钟。空间音频不可用时，游戏照旧走 XAudio2，不受影响。
+- `CAkLEngine::RunVPL` + `CAkVPLMixBusNode::ConsumeBuffer`：每个声音混入总线的位置。对于成为对象的声音，mod 按 Wwise 本来会用的增益渐变（含总线音量）取出它的 PCM，再把 Wwise 自己的混音矩阵相应调低，让床里只剩不属于对象的部分。在床和对象之间切换时，用一个 21 ms 的缓冲做交叉淡化。
+- 总线向上级总线传递输出的位置（高度声道），以及 `AK::SoundEngine::SetPosition`（把角色的声音位置从脚下抬到头部高度，`ActorLift`）。
 
-完整设计说明和涉及的 Wwise 内部细节见 [CLAUDE.md](CLAUDE.md)（英文）；`docs\` 里有面向接手者的详细说明
-（英文）：架构与数据流、Wwise 2012.2 内部结构与偏移、游戏侧的音频实体/角色组件/听者、Windows 空间音频输出、
-对象路由策略、逆向流程、测试与日志解读。从 [docs/README.md](docs/README.md) 开始。
+完整设计说明和涉及的 Wwise 内部细节见 [CLAUDE.md](CLAUDE.md)（英文）；`docs\` 里有面向接手者的详细说明（英文）：架构与数据流、Wwise 2012.2 内部结构与偏移、游戏侧的音频实体/角色组件/听者、Windows 空间音频输出、对象路由策略、逆向流程、测试与日志解读。从 [docs/README.md](docs/README.md) 开始。
 
 ### 需求
 
@@ -76,25 +64,20 @@ hook 点：
 | `SDAtmos.pdb` | 调试符号，只在分析崩溃转储时需要 |
 | `THIRD-PARTY-NOTICES.md` | 第三方代码的许可证 |
 
-`main` 上每次提交都会自动编译、测试并发布为预发布版 `build-<N>`（没有在游戏里测过）。在游戏里验证过的构建会被
-转为正式版；README 里的下载链接指向最新的正式版。Nexus Mods 上主文件 “SDAtmos” 是正式版，
-“SDAtmos GitHub CI Build” 是每次的预发布版，都是同一个 `SDAtmos.zip`。
+`main` 上每次提交都会自动编译、测试并发布为预发布版 `build-<N>`（没有在游戏里测过）。在游戏里验证过的构建会被转为正式版；README 里的下载链接指向最新的正式版。Nexus Mods 上主文件 “SDAtmos” 是正式版，“SDAtmos GitHub CI Build” 是每次的预发布版，都是同一个 `SDAtmos.zip`。
 
-已经有 ASI 加载器（不论叫 `dinput8.dll`、`winmm.dll` 还是别的名字）时，只需要把 `SDAtmos.asi` 放进它加载插件
-的目录（通常是 `plugins\`）。`SDAtmos.ini` 和 `SDAtmos.log` 写在 `.asi` 旁边。
+已经有 ASI 加载器（不论叫 `dinput8.dll`、`winmm.dll` 还是别的名字）时，只需要把 `SDAtmos.asi` 放进它加载插件的目录（通常是 `plugins\`）。`SDAtmos.ini` 和 `SDAtmos.log` 写在 `.asi` 旁边。
 
 ### 游戏内
 
 - **F9**：开关动态对象，用来和纯 7.1 声道床做 A/B 对比。
 - **F7**：开关高度声道（A/B 对比）。
 - **F8**：HUD（需要 ReShade）。显示所有带位置的声音的雷达图，并在画面上标出它们的方向。青色 = 对象，黄色 =
-  符合条件但在排队，灰色 = 留在床里，绿色 = 沈威自己的声音（留在床里，`PlayerInBed`），橙色 = 所在总线带插入
-  效果（留在床里，`BusFx`）。雷达以听者为中心，编号是对象槽位，点上的短杆表示声音在听者上方或下方。
+  符合条件但在排队，灰色 = 留在床里，绿色 = 沈威自己的声音（留在床里，`PlayerInBed`），橙色 = 所在总线带插入效果（留在床里，`BusFx`）。雷达以听者为中心，编号是对象槽位，点上的短杆表示声音在听者上方或下方。
 - **F6**（调试）：强制下雨/放晴，用来听高度声道。
 - ReShade 菜单 → **SDAtmos** 标签页：流状态、实时设置、声音列表、保存到 ini。
 
-按键可以在 `SDAtmos.ini` 里改（`ToggleObjectsKey`、`ToggleHeightsKey`、`ToggleHudKey`、`ToggleRainKey`，
-值为虚拟键码）。首次启动会生成带注释的 `SDAtmos.ini`（中英双语），日志写到 `SDAtmos.log`。
+按键可以在 `SDAtmos.ini` 里改（`ToggleObjectsKey`、`ToggleHeightsKey`、`ToggleHudKey`、`ToggleRainKey`，值为虚拟键码）。首次启动会生成带注释的 `SDAtmos.ini`（中英双语），日志写到 `SDAtmos.log`。
 
 ### 编译
 
@@ -106,9 +89,7 @@ Visual Studio 2022（v143），Windows SDK 10.0.26100。项目需要放在工作
 GitHub Actions 会对推送和 PR 按同样的布局编译（`-warnAsError`）并运行自动测试，依赖的确切版本见
 `.github/reference.env`；然后打包 `SDAtmos.zip`，其中 Ultimate ASI Loader 的版本和 SHA-256 固定在
 `.github/asi-loader.env`。推送到 `main` 且测试通过的构建会发布为预发布版 `build-<N>`，并作为新版本上传到
-Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 Nexus 的主文件（`nexus-release.yml`）。
-`asi-loader.yml` 每月检查一次 Ultimate ASI Loader 的新版本，有新版时开 PR 更新 `asi-loader.env`；
-`reference.yml` 对编译所用的依赖做同样的检查，开 PR 更新 `reference.env`；Dependabot 每月更新 Actions 的版本。
+Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 Nexus 的主文件（`nexus-release.yml`）。`asi-loader.yml` 每月检查一次 Ultimate ASI Loader 的新版本，有新版时开 PR 更新 `asi-loader.env`；`reference.yml` 对编译所用的依赖做同样的检查，开 PR 更新 `reference.env`；Dependabot 每月更新 Actions 的版本。
 
 ### 致谢
 
@@ -120,10 +101,8 @@ Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 N
   - SDmodding 随 [SDK](https://github.com/SDmodding/SDK) 发布的 [Visual Studio 2022 项目模板](https://github.com/SDmodding/SDK/releases/tag/vs2022)：这个 mod 的 Visual Studio 工程源自这个模板，编译设置和以 `dllmain.cc` 为起点的源文件结构都来自它；
   - SDmodding 分享的游戏 v1.0 版 exe 和调试符号（PDB，Steam 首发版自带）：游戏内置的 Wwise 音频引擎和游戏音频系统的内部结构都是从这里查到的；
   - [SDK](https://github.com/SDmodding/SDK)：游戏里的类名和数据结构（角色的音频组件、本地玩家等）；
-  - [BigFileSystem](https://github.com/SDmodding/BigFileSystem)、[TheoryEngine](https://github.com/SDmodding/TheoryEngine)，以及 sneakyevil 的 [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) 和 [Ekey](https://github.com/Ekey) 的 SDDEUnpacker 里的文件名列表：
-    读取游戏资源包（`.big`）的工具是照着它们写的，横幅图参照的游戏界面贴图就是用它取出的。
-- Audiokinetic 的 [Wwise](https://www.audiokinetic.com)：游戏用的是 Wwise 2012.2，mod 在它内部取出每个声音，并在声音对象上
-  重现游戏 Wwise 的参数均衡器。
+  - [BigFileSystem](https://github.com/SDmodding/BigFileSystem)、[TheoryEngine](https://github.com/SDmodding/TheoryEngine)，以及 sneakyevil 的 [SD-BigFileExplorer](https://github.com/sneakyevil/SD-BigFileExplorer) 和 [Ekey](https://github.com/Ekey) 的 SDDEUnpacker 里的文件名列表：读取游戏资源包（`.big`）的工具是照着它们写的，横幅图参照的游戏界面贴图就是用它取出的。
+- Audiokinetic 的 [Wwise](https://www.audiokinetic.com)：游戏用的是 Wwise 2012.2，mod 在它内部取出每个声音，并在声音对象上重现游戏 Wwise 的参数均衡器。
 - 音频研究和指南（头顶声道与声音对象的设计依据）：
   - Dolby 的游戏开发指南（Dolby Atmos「Artistic considerations」）、Dolby Atmos Renderer 指南、Dolby Pro Logic IIz
     资料，以及 Dolby 与 UMG 的音乐混音建议；
@@ -137,8 +116,7 @@ Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 N
 
 **mod 里包含的代码**（许可证全文见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)）
 
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)（ThirteenAG）：压缩包里的 `dinput8.dll`，让游戏加载 mod。它本身还包含 MinHook、
-  [miniz](https://github.com/richgel999/miniz)（Rich Geldreich 等）和 [praydog](https://github.com/praydog) 的 FunctionHookMinHook。
+- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)（ThirteenAG）：压缩包里的 `dinput8.dll`，让游戏加载 mod。它本身还包含 MinHook、[miniz](https://github.com/richgel999/miniz)（Rich Geldreich 等）和 [praydog](https://github.com/praydog) 的 FunctionHookMinHook。
 - [MinHook](https://github.com/TsudaKageyu/minhook)（Tsuda Kageyu，内含 Vyacheslav Patkov 的 Hacker Disassembler Engine）：mod 靠它接入游戏。
 - [ReShade](https://github.com/crosire/reshade)（crosire）的插件接口和 [Dear ImGui](https://github.com/ocornut/imgui)（Omar Cornut）：F8 雷达和游戏内的设置界面。
 
@@ -150,11 +128,7 @@ Nexus Mods；在 GitHub 上把预发布版转为正式版，会把它上传到 N
 
 **游戏与商标**
 
-《热血无赖：终极版》（Sleeping Dogs: Definitive Edition）由 United Front Games 开发、Square Enix 发行，
-游戏及其内容的版权归 Square Enix 所有。截图来自游戏画面。横幅图和图标仿照游戏的菜单界面重新绘制，没有使用游戏原图。
-Dolby、Dolby Atmos 和 Pro Logic 是 Dolby Laboratories 的商标；DTS、DTS:X 和 Neural:X 是 DTS, Inc. 的商标；
-Auro-Matic 是 Auro Technologies 的商标；Wwise 是 Audiokinetic 的商标；Windows 和 Windows Sonic 是 Microsoft 的商标。
-这些名字只用来说明 mod 支持的输出格式和参考的资料。
+《热血无赖：终极版》（Sleeping Dogs: Definitive Edition）由 United Front Games 开发、Square Enix 发行，游戏及其内容的版权归 Square Enix 所有。截图来自游戏画面。横幅图和图标仿照游戏的菜单界面重新绘制，没有使用游戏原图。Dolby、Dolby Atmos 和 Pro Logic 是 Dolby Laboratories 的商标；DTS、DTS:X 和 Neural:X 是 DTS, Inc. 的商标；Auro-Matic 是 Auro Technologies 的商标；Wwise 是 Audiokinetic 的商标；Windows 和 Windows Sonic 是 Microsoft 的商标。这些名字只用来说明 mod 支持的输出格式和参考的资料。
 
 与 Square Enix、United Front Games、Audiokinetic、Dolby、DTS、Microsoft 均无关联。
 
