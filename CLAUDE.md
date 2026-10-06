@@ -124,7 +124,8 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   `dinput8.dll`, pinned in `.github/asi-loader.env`, + `plugins\SDAtmos.asi` + notices); on `main` the next
   job publishes the zip, `.asi`, `.pdb` and `THIRD-PARTY-NOTICES.md` (licenses of the code compiled in and of
   the bundled loader; keep it in step with the dependencies) as prerelease `build-<N>` (N = commit count),
-  plain names so README.md can link `releases/latest/download/SDAtmos.zip`. `reference.yml` proposes newer
+  plain names so README.md can link `releases/latest/download/SDAtmos.zip`, after attesting the zip, `.asi`
+  and `.pdb` (`actions/attest`, build provenance; see `mods\SDIMEFix\CLAUDE.md`). `reference.yml` proposes newer
   pins in PRs (a new ReShade tag fails the build on `core/overlay.cc`'s `IMGUI_VERSION_NUM` assert until
   it is moved); bump them yourself when `reference\` moves first. `.github/dependabot.yml` proposes updates
   for the SHA-pinned actions monthly, `asi-loader.yml` a PR for a new loader release. A last job uploads the zip to [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)
