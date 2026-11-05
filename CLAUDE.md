@@ -129,7 +129,7 @@ voice router, reverse-engineering workflow, testing/logs). Keep both in sync: th
   pins in PRs (a new ReShade tag fails the build on `core/overlay.cc`'s `IMGUI_VERSION_NUM` assert until
   it is moved); bump them yourself when `reference\` moves first. `.github/dependabot.yml` proposes updates
   for the SHA-pinned actions monthly, `asi-loader.yml` a PR for a new loader release. A last job uploads the zip to [Nexus Mods](https://www.nexusmods.com/sleepingdogsdefinitiveedition/mods/173)
-  as the next version of the "SDAtmos GitHub CI Build" file, version `build-<N>`, previous version archived.
+  as the next version of the "SDAtmos Beta Build" file, version `build-<N>`, previous version archived.
   The packaging, loader-update and reference-update jobs are copies of SDIMEFix's (documented in
   `mods\SDIMEFix\CLAUDE.md`).
 - `README.md` — for players with no modding experience (what it does, turning on Windows spatial sound with

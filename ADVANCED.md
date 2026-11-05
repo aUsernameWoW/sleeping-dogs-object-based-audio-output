@@ -64,7 +64,7 @@ Wwise 引擎，改由 `ISpatialAudioClient` 输出：
 | `SDAtmos.pdb` | 调试符号，只在分析崩溃转储时需要 |
 | `THIRD-PARTY-NOTICES.md` | 第三方代码的许可证 |
 
-`main` 上每次提交都会自动编译、测试并发布为预发布版 `build-<N>`（没有在游戏里测过）。在游戏里验证过的构建会被转为正式版；README 里的下载链接指向最新的正式版。Nexus Mods 上主文件 “SDAtmos” 是正式版，“SDAtmos GitHub CI Build” 是每次的预发布版，都是同一个 `SDAtmos.zip`。
+`main` 上每次提交都会自动编译、测试并发布为预发布版 `build-<N>`（没有在游戏里测过）。在游戏里验证过的构建会被转为正式版；README 里的下载链接指向最新的正式版。Nexus Mods 上主文件 “SDAtmos” 是正式版，“SDAtmos Beta Build” 是每次的预发布版，都是同一个 `SDAtmos.zip`。
 
 2026 年 10 月以后的构建里，`SDAtmos.zip`、`SDAtmos.asi`、`SDAtmos.pdb` 都附有 GitHub 签名的[构建来源证明](https://docs.github.com/zh/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)（artifact attestation）。装了 [GitHub CLI](https://cli.github.com/) 的话，可以用 `gh attestation verify SDAtmos.zip -R aUsernameWoW/sleeping-dogs-object-based-audio-output` 确认下载到的文件确实是这个仓库的 CI 编译的，以及来自哪个提交。
 
@@ -208,7 +208,7 @@ has:
 
 Every commit on `main` is built, tested and published as a prerelease `build-<N>` (not tested in game).
 Builds verified in game are promoted to full releases; the README's download link points to the newest one.
-On Nexus Mods the main file "SDAtmos" is the full release and "SDAtmos GitHub CI Build" follows the
+On Nexus Mods the main file "SDAtmos" is the full release and "SDAtmos Beta Build" follows the
 prereleases; both are the same `SDAtmos.zip`.
 
 Builds since October 2026 carry a signed [build provenance attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) for the
